@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "name": "sample_aoi",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "منطقة تجريبية تعليمية - شمال الرياض",
+        "source": "GeoIndex Studio sample"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [46.5600, 24.7600],
+            [46.7800, 24.7600],
+            [46.7800, 24.9300],
+            [46.5600, 24.9300],
+            [46.5600, 24.7600]
+          ]
+        ]
+      }
+    }
+  ]
+}
