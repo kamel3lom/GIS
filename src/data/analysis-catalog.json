@@ -448,6 +448,22 @@
     "limitations": "غير مفعل دون GEE أو API مفتوح مناسب."
   },
   {
+    "id": "co2",
+    "name_ar": "CO2 - ثاني أكسيد الكربون",
+    "name_en": "CO2",
+    "category": "environment",
+    "requiredBands": ["CO2 column أو مصدر كربون مناسب"],
+    "formula": "حسب OCO-2/OCO-3 أو مصدر GEE المتاح",
+    "preferredSources": ["OCO-2/OCO-3 عبر GEE عند توفرها", "مصادر كربون رسمية"],
+    "geeSupported": true,
+    "browserSupported": false,
+    "requiredInputs": ["studyArea", "dateRange"],
+    "outputType": "raster",
+    "colorRamp": "pollution",
+    "interpretationTemplateId": "co2",
+    "limitations": "غير مفعل داخل المتصفح دون خادم GEE أو مصدر كربون مهيأ."
+  },
+  {
     "id": "aod",
     "name_ar": "Aerosol / AOD",
     "name_en": "Aerosol Optical Depth",

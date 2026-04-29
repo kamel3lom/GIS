@@ -88,6 +88,7 @@ export class GeoIndexApp {
 
   async init() {
     await this.loadLocalSettings();
+    await this.geeClient.restoreSession();
     this.renderShell();
     this.mapView = new MapView({
       elementId: 'map',
@@ -105,7 +106,14 @@ export class GeoIndexApp {
     this.renderCurrentTab();
     this.updateAnalysisMeta();
     this.updateMapTitle();
-    this.setProgress('GeoIndex Studio جاهز. ابدأ بالبحث أو الرسم أو رفع ملف.');
+    if (this.state.geeStatus === 'connected') {
+      await this.loadGeeDefaultMap({ silent: true });
+    }
+    this.setProgress(
+      this.state.geeStatus === 'connected'
+        ? 'GeoIndex Studio جاهز واتصال GEE مستعاد لهذه الصفحة.'
+        : 'GeoIndex Studio جاهز. ابدأ بالبحث أو الرسم أو رفع ملف.'
+    );
   }
 
   async loadLocalSettings() {
@@ -232,11 +240,18 @@ export class GeoIndexApp {
     document.getElementById('search-form')?.addEventListener('submit', (event) => this.handleSearch(event));
     document.getElementById('analysis-select')?.addEventListener('change', (event) => {
       this.state.selectedAnalysis = event.target.value;
+      if (this.state.currentResult?.id !== this.state.selectedAnalysis) {
+        this.state.currentResult = null;
+        this.state.interpretation = '';
+        this.updateInterpretationText();
+      }
       this.updateAnalysisMeta();
+      this.runAnalysisForCurrentSelection({ auto: true });
     });
     document.getElementById('run-analysis')?.addEventListener('click', () => this.runAnalysis());
     document.getElementById('gee-connect')?.addEventListener('click', () => this.connectGee());
     document.getElementById('gee-load-asset')?.addEventListener('click', () => this.loadGeeAsset());
+    document.getElementById('gee-disconnect')?.addEventListener('click', () => this.disconnectGee());
     document.getElementById('save-ai-settings')?.addEventListener('click', () => this.saveAiSettings());
     document.getElementById('delete-ai-keys')?.addEventListener('click', () => this.deleteAiKeys());
     document.getElementById('clear-local-data')?.addEventListener('click', () => this.clearAllLocalData());
@@ -263,9 +278,18 @@ export class GeoIndexApp {
 
   populateAuthInputs() {
     const settings = this.state.aiSettings || {};
+    const gee = this.geeClient.session;
+    const projectId = document.getElementById('gee-project-id');
+    const clientId = document.getElementById('gee-client-id');
+    const assetId = document.getElementById('gee-asset-id');
+    const serverUrl = document.getElementById('gee-server-url');
     const provider = document.getElementById('ai-provider');
     const apiKey = document.getElementById('ai-api-key');
     const model = document.getElementById('ai-model-endpoint');
+    if (projectId) projectId.value = gee.projectId || '';
+    if (clientId) clientId.value = gee.oauthClientId || '';
+    if (assetId) assetId.value = gee.assetId || '';
+    if (serverUrl) serverUrl.value = gee.serverUrl || '';
     if (provider) provider.value = settings.provider || 'rule-based';
     if (apiKey) apiKey.value = settings.apiKey || '';
     if (model) model.value = settings.endpoint || settings.model || '';
@@ -315,18 +339,42 @@ export class GeoIndexApp {
         )
         .join('');
       resultsBox.querySelectorAll('[data-result-index]').forEach((button) => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', async () => {
           const item = results[Number(button.dataset.resultIndex)];
           this.state.areaName = item.displayName.split(',')[0];
+          const studyArea = this.studyAreaFromPlace(item);
+          this.mapView.setStudyArea(studyArea);
           this.mapView.flyTo(item.lat, item.lon, item.zoom || 12);
           this.updateMapTitle();
-          this.setProgress(`تم الانتقال إلى: ${item.displayName}`);
+          this.setProgress(`تم اختيار ${item.displayName} كمنطقة دراسة. سيعمل التحليل مباشرة عند توفر GEE.`);
+          await this.runAnalysisForCurrentSelection({ auto: true });
         });
       });
       if (!results.length) this.setProgress('لم يتم العثور على نتائج. جرّب اسما آخر أو ارسم المنطقة يدويا.');
     } catch (error) {
       this.showError(error);
     }
+  }
+
+  studyAreaFromPlace(place) {
+    const fallbackSize = place.zoom && place.zoom >= 12 ? 0.04 : 0.16;
+    const south = Number(place.bbox?.[0] ?? place.lat - fallbackSize);
+    const north = Number(place.bbox?.[1] ?? place.lat + fallbackSize);
+    const west = Number(place.bbox?.[2] ?? place.lon - fallbackSize);
+    const east = Number(place.bbox?.[3] ?? place.lon + fallbackSize);
+    const bbox = [
+      Math.min(west, east),
+      Math.min(south, north),
+      Math.max(west, east),
+      Math.max(south, north)
+    ];
+    const feature = turf.bboxPolygon(bbox);
+    feature.properties = {
+      ...(feature.properties || {}),
+      name: place.displayName,
+      source: place.source || 'geocoder'
+    };
+    return feature;
   }
 
   async handleFileUpload(event) {
@@ -416,7 +464,13 @@ export class GeoIndexApp {
       <span>المعادلة: ${analysis.formula}</span>
       <span>المطلوب: ${analysis.requiredInputs.join('، ')}</span>
       <span class="${analysis.browserSupported ? 'ok-text' : 'warn-text'}">
-        ${analysis.browserSupported ? 'يدعم مسارا داخل المتصفح عند توفر البيانات.' : analysis.limitations}
+        ${
+          this.state.geeStatus === 'connected' && analysis.geeSupported
+            ? 'سيتم استدعاؤه من خادم GEE عند اختيار مدينة أو الضغط على تنفيذ التحليل.'
+            : analysis.browserSupported
+              ? 'يدعم مسارا داخل المتصفح عند توفر البيانات.'
+              : analysis.limitations
+        }
       </span>
     `;
   }
@@ -429,18 +483,24 @@ export class GeoIndexApp {
       const dateRange = this.getDateRange();
       const resolution = `${document.getElementById('resolution-select')?.value || '30'} متر`;
       if (!this.state.studyArea && analysis.requiredInputs.includes('studyArea')) {
-        throw new Error('حدد منطقة دراسة أولا بالرسم أو رفع مضلع.');
-      }
-
-      if (!analysis.browserSupported) {
-        if (this.state.geeStatus === 'connected' && analysis.geeSupported) {
-          await this.geeClient.runAnalysis(analysis.id, this.state.studyArea, dateRange, resolution);
-        }
-        throw new Error(analysis.limitations || 'هذا التحليل غير مفعّل بعد في الوضع المجاني.');
+        throw new Error('اختر مدينة من البحث أولا ليتم تحديد منطقة الدراسة تلقائيا، أو ارفع مضلعا عند الحاجة.');
       }
 
       let result;
-      if (rasterAnalyses.has(analysis.id)) {
+      if (this.state.geeStatus === 'connected' && analysis.geeSupported) {
+        try {
+          result = await this.runGeeAnalysis(analysis, dateRange, resolution);
+        } catch (error) {
+          if (!analysis.browserSupported || !this.hasBrowserInputsFor(analysis)) throw error;
+          this.setProgress(`تعذر مسار GEE، سيتم استخدام البيانات المحلية المتاحة. ${error.message}`);
+        }
+      }
+
+      if (!result && !analysis.browserSupported) {
+        throw new Error(analysis.limitations || 'هذا التحليل يحتاج خادم GEE مفعلا أو بيانات إضافية.');
+      }
+
+      if (!result && rasterAnalyses.has(analysis.id)) {
         if (!this.state.raster) {
           if (analysis.id === 'ndvi' && this.state.currentResult?.id === 'ndvi') {
             result = this.state.currentResult;
@@ -455,7 +515,7 @@ export class GeoIndexApp {
           });
         }
         this.mapView.addRasterOverlay(result.rasterOverlay, this.state.resultOpacity);
-      } else if (vectorAnalyses.has(analysis.id)) {
+      } else if (!result && vectorAnalyses.has(analysis.id)) {
         result = runVectorAnalysis(analysis.id, {
           drawnGeoJSON: this.state.drawnGeoJSON,
           uploadedGeoJSON: this.state.uploadedGeoJSON,
@@ -464,19 +524,67 @@ export class GeoIndexApp {
           context: { dateRange, resolution }
         });
         if (result.geojson?.features?.length) this.mapView.addResultGeoJSON(result.geojson, result.name);
-      } else {
+      } else if (!result) {
         throw new Error('هذا التحليل يحتاج بيانات أو تكاملا غير مفعّل بعد.');
       }
 
-      this.state.currentResult = result;
-      this.state.interpretation = '';
-      this.updateInterpretationText();
-      this.updateMapTitle();
-      this.setProgress('اكتمل التحليل بقيم محسوبة فعليا.');
-      if (this.state.activeTab === 'results') this.renderCurrentTab();
+      this.applyAnalysisResult(result);
     } catch (error) {
       this.showError(error);
     }
+  }
+
+  async runAnalysisForCurrentSelection({ auto = false } = {}) {
+    const analysis = analysisCatalog.find((item) => item.id === this.state.selectedAnalysis);
+    if (!analysis) return;
+    if (auto && !(this.state.geeStatus === 'connected' && analysis.geeSupported && this.state.studyArea)) return;
+    await this.runAnalysis();
+  }
+
+  hasBrowserInputsFor(analysis) {
+    if (rasterAnalyses.has(analysis.id)) {
+      return Boolean(this.state.raster || (analysis.id === 'ndvi' && this.state.currentResult?.id === 'ndvi'));
+    }
+    if (vectorAnalyses.has(analysis.id)) {
+      return Boolean(
+        this.state.studyArea ||
+          this.state.uploadedGeoJSON?.features?.length ||
+          this.state.drawnGeoJSON?.features?.length
+      );
+    }
+    return false;
+  }
+
+  async runGeeAnalysis(analysis, dateRange, resolution) {
+    this.setProgress(`جاري استدعاء ${analysis.name_ar} من خادم GEE...`);
+    const result = await this.geeClient.runAnalysis(analysis.id, this.state.studyArea, dateRange, resolution, {
+      areaName: this.state.areaName,
+      name: analysis.name_ar,
+      rampName: analysis.colorRamp,
+      interpretationTemplateId: analysis.interpretationTemplateId
+    });
+    result.id = analysis.id;
+    result.name = result.name || analysis.name_ar;
+    result.interpretationTemplateId = result.interpretationTemplateId || analysis.interpretationTemplateId;
+    if (result.tileUrl) {
+      this.mapView.addGeeTileLayer(result.tileUrl, {
+        opacity: this.state.resultOpacity,
+        rampName: result.rampName || analysis.colorRamp,
+        bounds: result.bbox
+      });
+    }
+    if (result.rasterOverlay) this.mapView.addRasterOverlay(result.rasterOverlay, this.state.resultOpacity);
+    if (result.geojson?.features?.length) this.mapView.addResultGeoJSON(result.geojson, result.name);
+    return result;
+  }
+
+  applyAnalysisResult(result) {
+    this.state.currentResult = result;
+    this.state.interpretation = '';
+    this.updateInterpretationText();
+    this.updateMapTitle();
+    this.setProgress('اكتمل التحليل بقيم محسوبة فعليا من المؤشر الحالي.');
+    if (this.state.activeTab === 'results') this.renderCurrentTab();
   }
 
   getDateRange() {
@@ -533,6 +641,13 @@ export class GeoIndexApp {
       this.showError(new Error('نفذ تحليلا أولا قبل تفسير النتيجة.'));
       return;
     }
+    if (this.state.currentResult.id !== this.state.selectedAnalysis) {
+      await this.runAnalysisForCurrentSelection({ auto: false });
+      if (!this.state.currentResult || this.state.currentResult.id !== this.state.selectedAnalysis) {
+        this.showError(new Error('النتيجة الحالية لا تطابق المؤشر المختار. نفذ تحليل المؤشر الحالي أولا.'));
+        return;
+      }
+    }
     this.setProgress('جاري توليد التفسير من القيم المحسوبة...');
     try {
       const settings = this.getAiSettingsFromUi();
@@ -541,7 +656,8 @@ export class GeoIndexApp {
           ? { provider: 'rule-based' }
           : settings;
       this.state.interpretation = await callAIProvider(safeSettings, this.state.currentResult, {
-        areaName: this.state.areaName
+        areaName: this.state.areaName,
+        selectedAnalysisId: this.state.selectedAnalysis
       });
       this.updateInterpretationText();
       this.setProgress('تم توليد التفسير. لم تتم إضافة أرقام غير موجودة في النتائج.');
@@ -612,6 +728,7 @@ export class GeoIndexApp {
   async clearAllLocalData() {
     await clearLocalData();
     this.state.aiSettings = { provider: 'rule-based' };
+    this.geeClient.disconnect('تم مسح بيانات الجلسة المحلية.');
     this.setProgress('تم مسح البيانات المحلية المخزنة في المتصفح.');
   }
 
@@ -619,7 +736,12 @@ export class GeoIndexApp {
     try {
       const projectId = document.getElementById('gee-project-id')?.value;
       const oauthClientId = document.getElementById('gee-client-id')?.value;
-      await this.geeClient.authenticate({ projectId, oauthClientId });
+      const assetId = document.getElementById('gee-asset-id')?.value;
+      const serverUrl = document.getElementById('gee-server-url')?.value;
+      await this.geeClient.authenticate({ projectId, oauthClientId, assetId, serverUrl });
+      this.populateAuthInputs();
+      await this.loadGeeDefaultMap({ silent: true });
+      await this.runAnalysisForCurrentSelection({ auto: true });
     } catch (error) {
       this.state.geeStatus = 'failed';
       this.updateGeeStatus(error.message);
@@ -630,11 +752,44 @@ export class GeoIndexApp {
   async loadGeeAsset() {
     try {
       const assetId = document.getElementById('gee-asset-id')?.value;
-      const asset = await this.geeClient.loadAsset(assetId);
-      this.setProgress(`تم التحقق من Asset: ${asset.name || assetId}`);
+      const serverUrl = document.getElementById('gee-server-url')?.value;
+      if (serverUrl) this.geeClient.serverUrl = serverUrl.trim().replace(/\/+$/, '');
+      this.geeClient.saveSession();
+      if (assetId) await this.geeClient.loadAsset(assetId);
+      await this.loadGeeDefaultMap();
     } catch (error) {
       this.showError(error);
     }
+  }
+
+  async loadGeeDefaultMap({ silent = false } = {}) {
+    if (this.state.geeStatus !== 'connected') return;
+    try {
+      const analysis = analysisCatalog.find((item) => item.id === this.state.selectedAnalysis);
+      const mapResult = await this.geeClient.getMapTileUrl({
+        analysisId: this.state.selectedAnalysis,
+        studyArea: this.state.studyArea,
+        dateRange: this.getDateRange(),
+        resolution: `${document.getElementById('resolution-select')?.value || '30'} متر`,
+        rampName: analysis?.colorRamp,
+        interpretationTemplateId: analysis?.interpretationTemplateId
+      });
+      this.mapView.addGeeTileLayer(mapResult.tileUrl, {
+        opacity: this.state.resultOpacity,
+        rampName: mapResult.rampName || analysis?.colorRamp,
+        bounds: mapResult.bbox
+      });
+      if (!silent) this.setProgress('تم تحميل خريطة GEE من الخادم المرتبط.');
+    } catch (error) {
+      if (!silent) this.showError(error);
+    }
+  }
+
+  disconnectGee() {
+    this.geeClient.disconnect();
+    this.state.geeStatus = 'disconnected';
+    this.populateAuthInputs();
+    this.updateGeeStatus('تم قطع ربط GEE لهذه الصفحة.');
   }
 
   updateGeeStatus(message = '') {

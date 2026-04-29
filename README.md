@@ -18,9 +18,10 @@ http://localhost:5173
 
 ## النشر على GitHub Pages
 
-1. شغّل `npm run build`.
-2. ارفع محتوى مجلد `dist` إلى فرع GitHub Pages أو استخدم GitHub Actions لنشره.
-3. إعداد Vite يستخدم `base: './'` حتى تعمل الأصول عند النشر داخل مسار فرعي.
+1. شغّل `npm run build` محليا عند الاختبار.
+2. عند الدفع إلى فرع `main`، يشغّل GitHub Actions ملف `.github/workflows/deploy-pages.yml`.
+3. workflow ينفذ `npm ci` ثم `npm test` ثم `npm run build` ويرفع مجلد `dist` إلى GitHub Pages.
+4. إعداد Vite يستخدم `base: './'` حتى تعمل الأصول عند النشر داخل مسار فرعي مثل `https://kamel3lom.github.io/GeoIndex-Studio/`.
 
 ## ما يعمل دون مفاتيح
 
@@ -44,8 +45,11 @@ http://localhost:5173
 - Google Cloud / Earth Engine Project ID.
 - OAuth Web Client ID.
 - Asset ID اختياري لاختبار الوصول.
+- رابط خادم تحليلات GEE إذا كانت الخرائط والمؤشرات موجودة على خادمك.
 
-النسخة الحالية تختبر الاتصال الحقيقي بواجهة Earth Engine REST وتفتح Asset عند نجاح OAuth. تشغيل تحليلات GEE الكاملة وعرض بلاطات GEE معلن داخل الواجهة كغير مفعّل بعد حتى لا تدعي الأداة تحليلا غير موجود.
+بعد الربط تحفظ الجلسة في `sessionStorage` حتى إغلاق الصفحة أو انتهاء صلاحية Google token. عند اختيار مدينة من البحث، ينشئ التطبيق منطقة دراسة تلقائيا من حدود المدينة، ثم يستدعي المؤشر المختار من خادم GEE عند توفره دون مطالبة المستخدم المبتدئ برسم نقطة أو مضلع.
+
+خادم GEE يجب أن يرجع JSON يحتوي القيم المحسوبة الفعلية و`tileUrl` أو `geojson`/`rasterOverlay`. راجع `server-optional/README.md` لعقد الطلب والاستجابة.
 
 ## ما يحتاج API Key
 

@@ -27,7 +27,7 @@ export async function clearLocalData() {
 export function privacyNotice() {
   return [
     'لا ترسل GeoIndex Studio بياناتك أو مفاتيحك لأي طرف ثالث إلا عند اختيارك مزودا خارجيا صراحة.',
-    'مفاتيح AI وبيانات GEE تبقى في المتصفح عند موافقتك على الحفظ المحلي.',
+    'مفاتيح AI تحفظ محليا عند موافقتك فقط، أما جلسة GEE فتخزن في sessionStorage حتى إغلاق الصفحة.',
     'لا توجد مفاتيح API مخفية داخل المستودع ولا يتم تخزين OAuth tokens في ملفات المشروع.'
   ];
 }

@@ -54,7 +54,10 @@ const allSourceText = [
   readFileSync(join(root, 'README.md'), 'utf8')
 ].join('\n');
 check('no obvious secret keys committed', !/(sk-[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})/.test(allSourceText));
-check('GEE does not pretend full analysis', allSourceText.includes('غير مفعّل بعد'));
+check(
+  'GEE analysis requires configured server and session storage',
+  allSourceText.includes('رابط خادم') && allSourceText.includes('sessionStorage')
+);
 
 const failed = checks.filter((item) => !item.ok);
 for (const item of checks) {

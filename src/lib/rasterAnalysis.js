@@ -34,6 +34,12 @@ export const colorRamps = {
     [50, '#f35b04'],
     [70, '#7a0403']
   ],
+  pollution: [
+    [0, '#2c7bb6'],
+    [0.33, '#ffffbf'],
+    [0.66, '#fdae61'],
+    [1, '#7f0000']
+  ],
   terrain: [
     [-500, '#1b6ca8'],
     [0, '#8ec07c'],
@@ -345,6 +351,7 @@ function rampForAnalysis(analysisId) {
   if (['ndbi', 'built_up', 'urban_density'].includes(analysisId)) return 'urban';
   if (['lst', 'thermal_gradient', 'uhi'].includes(analysisId)) return 'thermal';
   if (['dem', 'slope', 'aspect', 'hillshade', 'profile'].includes(analysisId)) return 'terrain';
+  if (['air_quality', 'no2', 'co2', 'aod', 'pm25'].includes(analysisId)) return 'pollution';
   return 'overlay';
 }
 

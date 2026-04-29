@@ -2,9 +2,13 @@ import interpretationLibrary from '../data/interpretation-library.json';
 import { formatArea } from './geospatial';
 import { formatNumber } from './rasterAnalysis';
 
-function indicatorInfo(analysisId) {
+function indicatorInfo(analysisId, result = {}) {
+  const templateId = result.interpretationTemplateId || result.templateId;
+  const pollutionIds = new Set(['air_quality', 'no2', 'co2', 'aod', 'pm25']);
   return (
+    interpretationLibrary.indicators[templateId] ||
     interpretationLibrary.indicators[analysisId] ||
+    (pollutionIds.has(analysisId) ? interpretationLibrary.indicators.pollution : null) ||
     interpretationLibrary.indicators.vector_summary ||
     interpretationLibrary.indicators.pollution
   );
@@ -17,12 +21,14 @@ function dominantClass(stats) {
 }
 
 export function buildPromptFromResults(result, context = {}) {
-  const info = indicatorInfo(result.id);
+  const info = indicatorInfo(result.id, result);
   const stats = result.stats || {};
   const dominant = dominantClass(stats);
   const lines = [
     'اكتب تفسيرا أكاديميا عربيا واضحا يبدأ بعبارة: "يتضح من الخريطة الناتجة أن..."',
+    'فسر المؤشر المختار فقط ولا تستبدله بمؤشر آخر مثل NDVI أو الغطاء النباتي ما لم يكن هو المؤشر المختار فعلا.',
     'لا تضف أي رقم غير موجود في JSON التالي. إذا لم تتوفر قيمة فاكتب "غير متاح بسبب نقص البيانات".',
+    `معرف المؤشر المختار: ${result.id}`,
     `نوع التحليل: ${result.name}`,
     `منطقة الدراسة: ${context.areaName || 'منطقة مرسومة أو مرفوعة من المستخدم'}`,
     `المصدر: ${result.source || 'غير محدد'}`,
@@ -39,6 +45,7 @@ export function buildPromptFromResults(result, context = {}) {
         mean: stats.mean,
         median: stats.median,
         stdDev: stats.stdDev,
+        unit: result.unit || stats.unit,
         area: stats.totalAreaM2 || stats.studyAreaM2,
         classes: stats.classes,
         dominantClass: dominant
@@ -53,7 +60,7 @@ export function buildPromptFromResults(result, context = {}) {
 
 export function ruleBasedInterpretation(result, context = {}) {
   const stats = result.stats || {};
-  const info = indicatorInfo(result.id);
+  const info = indicatorInfo(result.id, result);
   const dominant = dominantClass(stats);
   const areaName = context.areaName || 'منطقة الدراسة';
   const min = formatNullable(stats.min);
@@ -61,6 +68,9 @@ export function ruleBasedInterpretation(result, context = {}) {
   const mean = formatNullable(stats.mean);
   const median = formatNullable(stats.median);
   const stdDev = formatNullable(stats.stdDev);
+  const unit = result.unit || stats.unit || '';
+  const rangeText = unit ? `${min} ${unit} و${max} ${unit}` : `${min} و${max}`;
+  const meanText = unit ? `${mean} ${unit}` : mean;
   const classText = dominant
     ? `وتظهر الفئة "${dominant.label}" بوصفها الفئة الأكبر ضمن التوزيع بنسبة ${
         dominant.percentage == null ? 'غير متاح بسبب نقص البيانات' : `${dominant.percentage.toFixed(2)}%`
@@ -86,11 +96,11 @@ export function ruleBasedInterpretation(result, context = {}) {
   }
 
   return [
-    `يتضح من الخريطة الناتجة أن ${info.title_ar || result.name} في ${areaName} يتراوح بين ${min} و${max}، بمتوسط قدره ${mean}.`,
+    `يتضح من الخريطة الناتجة أن ${info.title_ar || result.name} في ${areaName} يتراوح بين ${rangeText}، بمتوسط قدره ${meanText}.`,
     `كما أن الوسيط يساوي ${median} والانحراف المعياري يساوي ${stdDev} عند توفر قيم صالحة للحساب.`,
     `تشير القيم الأعلى إلى ${info.highValues} بينما تعكس القيم الأدنى ${info.lowValues}`,
     classText,
-    `من الناحية الجغرافية، تعبر هذه النتيجة عن نمط مكاني أولي يمكن ربطه بخصائص السطح أو الغطاء أو الاستخدام حسب نوع المؤشر. ${sourceText}`,
+    `من الناحية الجغرافية، يفسر هذا النص المؤشر المختار نفسه (${info.title_ar || result.name}) اعتمادا على القيم الظاهرة في الخريطة والنتائج فقط. ${sourceText}`,
     reliability,
     'هذه النتيجة تحليلية أولية وليست بديلا عن المسح الميداني أو البيانات الرسمية، ويجب مراجعة تاريخ الالتقاط ودقة المصدر وحالة السحب أو جودة الحزم قبل استخدامها في قرارات حساسة.'
   ].join(' ');
@@ -147,7 +157,7 @@ async function callOpenAI(settings, prompt) {
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: 'أنت مفسر GIS أكاديمي. لا تضف أرقاما غير موجودة في بيانات المستخدم.' },
+        { role: 'system', content: 'أنت مفسر GIS أكاديمي. فسر المؤشر المختار فقط ولا تضف أرقاما غير موجودة في بيانات المستخدم.' },
         { role: 'user', content: prompt }
       ],
       temperature: 0.2
@@ -172,7 +182,7 @@ async function callOpenRouter(settings, prompt) {
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: 'فسر نتائج GIS باللغة العربية دون اختراع أرقام.' },
+        { role: 'system', content: 'فسر نتائج GIS باللغة العربية للمؤشر المختار فقط دون اختراع أرقام.' },
         { role: 'user', content: prompt }
       ],
       temperature: 0.2

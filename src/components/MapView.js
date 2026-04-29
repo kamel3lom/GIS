@@ -16,6 +16,7 @@ export class MapView {
     this.uploadedLayers = L.featureGroup();
     this.resultLayer = null;
     this.rasterLayer = null;
+    this.geeLayer = null;
     this.studyAreaLayer = null;
     this.legendControl = null;
     this.coordinateControl = null;
@@ -244,9 +245,32 @@ export class MapView {
     this.onStatus('تم عرض طبقة Raster محسوبة على الخريطة.');
   }
 
+  addGeeTileLayer(tileUrl, { opacity = 0.72, rampName = 'overlay', bounds = null } = {}) {
+    if (!tileUrl) throw new Error('خادم GEE لم يرجع رابط بلاطات صالحا.');
+    if (this.geeLayer) this.map.removeLayer(this.geeLayer);
+    this.geeLayer = L.tileLayer(tileUrl, {
+      opacity,
+      crossOrigin: true,
+      attribution: 'Google Earth Engine'
+    }).addTo(this.map);
+    this.geeLayer.bringToFront();
+    if (Array.isArray(bounds) && bounds.length === 4) {
+      this.map.fitBounds(
+        [
+          [bounds[1], bounds[0]],
+          [bounds[3], bounds[2]]
+        ],
+        { padding: [28, 28] }
+      );
+    }
+    this.updateLegend(rampName);
+    this.onStatus('تم عرض خريطة Google Earth Engine من الخادم المرتبط.');
+  }
+
   setResultOpacity(opacity) {
     const value = Number(opacity);
     if (this.rasterLayer) this.rasterLayer.setOpacity(value);
+    if (this.geeLayer) this.geeLayer.setOpacity(value);
     if (this.resultLayer) this.resultLayer.setStyle?.({ fillOpacity: value * 0.42, opacity: Math.max(0.25, value) });
   }
 
