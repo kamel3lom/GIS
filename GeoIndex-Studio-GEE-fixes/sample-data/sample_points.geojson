@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "name": "sample_points",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "نقطة خدمة 1", "class": "خدمات" },
+      "geometry": { "type": "Point", "coordinates": [46.6105, 24.8051] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "نقطة خدمة 2", "class": "خدمات" },
+      "geometry": { "type": "Point", "coordinates": [46.6842, 24.8614] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "نقطة خدمة 3", "class": "خدمات" },
+      "geometry": { "type": "Point", "coordinates": [46.7421, 24.9105] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "نقطة خارجية", "class": "خارج النطاق" },
+      "geometry": { "type": "Point", "coordinates": [46.8300, 24.9700] }
+    }
+  ]
+}

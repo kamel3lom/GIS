@@ -1,0 +1,7 @@
+[
+  { "name_ar": "الرياض", "name_en": "Riyadh", "lat": 24.7136, "lon": 46.6753, "zoom": 10 },
+  { "name_ar": "جدة", "name_en": "Jeddah", "lat": 21.4858, "lon": 39.1925, "zoom": 10 },
+  { "name_ar": "القاهرة", "name_en": "Cairo", "lat": 30.0444, "lon": 31.2357, "zoom": 10 },
+  { "name_ar": "دبي", "name_en": "Dubai", "lat": 25.2048, "lon": 55.2708, "zoom": 10 },
+  { "name_ar": "لندن", "name_en": "London", "lat": 51.5072, "lon": -0.1276, "zoom": 10 }
+]

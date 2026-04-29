@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GeoIndex Studio">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#07111f"/>
+      <stop offset="0.55" stop-color="#0f2f57"/>
+      <stop offset="1" stop-color="#d8b45d"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <path d="M14 41 31 11l19 42H38l-4-9H24l-5 9H9l5-12Zm14-8h6l-3-7-3 7Z" fill="#fff6d8"/>
+  <path d="M12 47c11 5 27 5 40-1" fill="none" stroke="#61d7ff" stroke-width="3" stroke-linecap="round"/>
+</svg>

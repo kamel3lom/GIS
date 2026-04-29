@@ -1,0 +1,62 @@
+[
+  {
+    "id": "formal_academic",
+    "name_ar": "قالب أكاديمي رسمي",
+    "name_en": "Formal Academic",
+    "accent": "#d8b45d",
+    "background": "#f6f2e8",
+    "text": "#0c1524",
+    "panel": "rgba(255,255,255,0.88)",
+    "watermark": "kamel3lom"
+  },
+  {
+    "id": "environment_green",
+    "name_ar": "قالب بيئي أخضر",
+    "name_en": "Environmental Green",
+    "accent": "#49c46b",
+    "background": "#071b14",
+    "text": "#eefdf4",
+    "panel": "rgba(4,38,26,0.82)",
+    "watermark": "kamel3lom"
+  },
+  {
+    "id": "urban",
+    "name_ar": "قالب حضري/عمراني",
+    "name_en": "Urban",
+    "accent": "#f0b85a",
+    "background": "#111827",
+    "text": "#f7f7f7",
+    "panel": "rgba(17,24,39,0.84)",
+    "watermark": "kamel3lom"
+  },
+  {
+    "id": "thermal_climate",
+    "name_ar": "قالب حراري/مناخي",
+    "name_en": "Thermal Climate",
+    "accent": "#ff725e",
+    "background": "#200b12",
+    "text": "#fff5ef",
+    "panel": "rgba(45,15,22,0.84)",
+    "watermark": "kamel3lom"
+  },
+  {
+    "id": "space_satellite",
+    "name_ar": "قالب فضائي/أقمار صناعية",
+    "name_en": "Space Satellite",
+    "accent": "#61d7ff",
+    "background": "#06111f",
+    "text": "#eef8ff",
+    "panel": "rgba(6,17,31,0.86)",
+    "watermark": "kamel3lom"
+  },
+  {
+    "id": "luxury_dark",
+    "name_ar": "قالب فاخر داكن بتوقيع kamel3lom",
+    "name_en": "Luxury Dark kamel3lom",
+    "accent": "#d8b45d",
+    "background": "#05070b",
+    "text": "#fff7df",
+    "panel": "rgba(10,16,27,0.88)",
+    "watermark": "kamel3lom"
+  }
+]
