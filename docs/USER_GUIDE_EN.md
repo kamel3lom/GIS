@@ -1,35 +1,29 @@
-# GeoIndex Studio User Guide
+# User Guide
 
-GeoIndex Studio is a browser-first educational GIS and remote sensing tool. It is designed for beginners and avoids fake buttons or hidden API keys.
+## Simple Flow
 
-## Quick Start
+1. Open the data and sources tab.
+2. Enter the Google Cloud / Earth Engine Project ID and OAuth Web Client ID.
+3. Connect Google Earth Engine.
+4. Return to the analysis tab.
+5. Search for a city or capital and select it.
+6. Select the year.
+7. Select an indicator and run the analysis.
 
-1. Open the app.
-2. Pick a basemap. OpenStreetMap works without a key.
-3. Search for a place, draw a study area, or upload a boundary.
-4. Upload vector data or a georeferenced GeoTIFF when the selected analysis needs data.
-5. Choose an analysis and run it.
-6. Review the computed statistics.
-7. Generate an interpretation.
-8. Export a map, poster, PDF, or vector file.
+The user does not need to draw a point or polygon, upload GeoJSON, configure a GEE server, or provide an Asset ID.
 
-## Supported Local Files
+## City Boundary
 
-- GeoJSON / JSON
-- KML
-- GPX
-- CSV with `lat/lon` or `latitude/longitude`
-- zipped Shapefile
-- georeferenced GeoTIFF
+The app uses the city boundary returned by the search provider when available. If no boundary is returned, it falls back to a bounding box around the city.
 
-## Browser Analyses
+## Indicators
 
-Vector analyses use Turf.js. Raster indices use values read from uploaded GeoTIFF files. The app does not compute satellite indices from basemap tiles.
+The list shows direct GEE indicators that the app has ready recipes for, such as NDVI, NDWI, NDBI, LST, NO2, CHIRPS precipitation, VIIRS night lights, and ESA WorldCover. If a product is unavailable for the selected year or area, the app shows the error clearly.
 
-## AI Interpretation
+## Interpretation
 
-Without an API key, the app uses a free rule-based interpreter. Optional Gemini, OpenAI, OpenRouter, and Ollama integrations use the user's own key or local endpoint.
+The interpretation button reads the current result only: selected indicator, city, year, source, and computed statistics. If the selected indicator changed, the app recalculates before interpreting so stale text is not reused.
 
-## Exports
+## Export
 
-The app can export PNG, posters, PDF, GeoJSON, KML, and Shapefile ZIP for vector data. Raster-to-Shapefile conversion is not faked.
+Map and poster exports are available from the export tab. Some GEE tiles may block browser screenshots because of CORS restrictions.

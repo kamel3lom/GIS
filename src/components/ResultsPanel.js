@@ -6,7 +6,7 @@ export function renderResultsPanel(result) {
     return `
       <section class="empty-state">
         <h2>لا توجد نتائج بعد</h2>
-        <p>ارسم منطقة دراسة أو ارفع بيانات ثم اضغط "تنفيذ التحليل". لن تظهر أي نسبة إلا بعد حسابها فعليا.</p>
+        <p>اختر مدينة وسنة ومؤشرا ثم اضغط "تنفيذ التحليل". لن تظهر أي نسبة إلا بعد حسابها فعليا من Google Earth Engine.</p>
       </section>
     `;
   }

@@ -66,7 +66,7 @@ export class GeoIndexApp {
     this.state = {
       activeTab: 'analysis',
       currentSource: 'osm',
-      selectedAnalysis: 'vector_summary',
+      selectedAnalysis: 'ndvi',
       drawnGeoJSON: turf.featureCollection([]),
       uploadedGeoJSON: turf.featureCollection([]),
       studyArea: null,
@@ -112,7 +112,7 @@ export class GeoIndexApp {
     this.setProgress(
       this.state.geeStatus === 'connected'
         ? 'GeoIndex Studio جاهز واتصال GEE مستعاد لهذه الصفحة.'
-        : 'GeoIndex Studio جاهز. ابدأ بالبحث أو الرسم أو رفع ملف.'
+        : 'GeoIndex Studio جاهز. ابدأ بربط Google Earth Engine ثم اختر مدينة ومؤشرا وسنة.'
     );
   }
 
@@ -163,7 +163,6 @@ export class GeoIndexApp {
     if (!content) return;
     if (this.state.activeTab === 'analysis') {
       content.innerHTML = `
-        ${renderSourceSelector(this.state.currentSource)}
         ${renderStudyAreaControls()}
         ${renderAnalysisSelector(analysisCatalog, this.state.selectedAnalysis)}
       `;
@@ -231,10 +230,6 @@ export class GeoIndexApp {
     document.querySelectorAll('[data-source-id]').forEach((button) => {
       button.addEventListener('click', () => this.handleSourceSelection(button.dataset.sourceId));
     });
-    document.querySelectorAll('[data-draw]').forEach((button) => {
-      button.addEventListener('click', () => this.mapView.startDraw(button.dataset.draw));
-    });
-    document.getElementById('clear-drawings')?.addEventListener('click', () => this.mapView.clearDrawings());
     document.getElementById('file-upload')?.addEventListener('change', (event) => this.handleFileUpload(event));
     document.getElementById('load-sample')?.addEventListener('click', () => this.loadSampleData());
     document.getElementById('search-form')?.addEventListener('submit', (event) => this.handleSearch(event));
@@ -250,7 +245,6 @@ export class GeoIndexApp {
     });
     document.getElementById('run-analysis')?.addEventListener('click', () => this.runAnalysis());
     document.getElementById('gee-connect')?.addEventListener('click', () => this.connectGee());
-    document.getElementById('gee-load-asset')?.addEventListener('click', () => this.loadGeeAsset());
     document.getElementById('gee-disconnect')?.addEventListener('click', () => this.disconnectGee());
     document.getElementById('save-ai-settings')?.addEventListener('click', () => this.saveAiSettings());
     document.getElementById('delete-ai-keys')?.addEventListener('click', () => this.deleteAiKeys());
@@ -267,12 +261,17 @@ export class GeoIndexApp {
   }
 
   populateAnalysisInputs() {
-    const today = new Date().toISOString().slice(0, 10);
-    const lastMonth = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const year = Number(document.getElementById('analysis-year')?.value || new Date().getFullYear() - 1);
     const start = document.getElementById('date-start');
     const end = document.getElementById('date-end');
-    if (start && !start.value) start.value = lastMonth;
-    if (end && !end.value) end.value = today;
+    if (start) start.value = `${year}-01-01`;
+    if (end) end.value = `${year}-12-31`;
+    document.getElementById('analysis-year')?.addEventListener('change', () => {
+      const selectedYear = Number(document.getElementById('analysis-year')?.value || year);
+      if (start) start.value = `${selectedYear}-01-01`;
+      if (end) end.value = `${selectedYear}-12-31`;
+      this.runAnalysisForCurrentSelection({ auto: true });
+    });
     this.updateAnalysisMeta();
   }
 
@@ -281,15 +280,11 @@ export class GeoIndexApp {
     const gee = this.geeClient.session;
     const projectId = document.getElementById('gee-project-id');
     const clientId = document.getElementById('gee-client-id');
-    const assetId = document.getElementById('gee-asset-id');
-    const serverUrl = document.getElementById('gee-server-url');
     const provider = document.getElementById('ai-provider');
     const apiKey = document.getElementById('ai-api-key');
     const model = document.getElementById('ai-model-endpoint');
     if (projectId) projectId.value = gee.projectId || '';
     if (clientId) clientId.value = gee.oauthClientId || '';
-    if (assetId) assetId.value = gee.assetId || '';
-    if (serverUrl) serverUrl.value = gee.serverUrl || '';
     if (provider) provider.value = settings.provider || 'rule-based';
     if (apiKey) apiKey.value = settings.apiKey || '';
     if (model) model.value = settings.endpoint || settings.model || '';
@@ -350,13 +345,23 @@ export class GeoIndexApp {
           await this.runAnalysisForCurrentSelection({ auto: true });
         });
       });
-      if (!results.length) this.setProgress('لم يتم العثور على نتائج. جرّب اسما آخر أو ارسم المنطقة يدويا.');
+      if (!results.length) this.setProgress('لم يتم العثور على نتائج. جرّب اسم مدينة أو عاصمة آخر.');
     } catch (error) {
       this.showError(error);
     }
   }
 
   studyAreaFromPlace(place) {
+    if (place.geojson && ['Polygon', 'MultiPolygon'].includes(place.geojson.type)) {
+      return {
+        type: 'Feature',
+        properties: {
+          name: place.displayName,
+          source: place.source || 'geocoder'
+        },
+        geometry: place.geojson
+      };
+    }
     const fallbackSize = place.zoom && place.zoom >= 12 ? 0.04 : 0.16;
     const south = Number(place.bbox?.[0] ?? place.lat - fallbackSize);
     const north = Number(place.bbox?.[1] ?? place.lat + fallbackSize);
@@ -466,7 +471,7 @@ export class GeoIndexApp {
       <span class="${analysis.browserSupported ? 'ok-text' : 'warn-text'}">
         ${
           this.state.geeStatus === 'connected' && analysis.geeSupported
-            ? 'سيتم استدعاؤه من خادم GEE عند اختيار مدينة أو الضغط على تنفيذ التحليل.'
+            ? 'سيتم حسابه مباشرة من Google Earth Engine عند اختيار مدينة أو الضغط على تنفيذ التحليل.'
             : analysis.browserSupported
               ? 'يدعم مسارا داخل المتصفح عند توفر البيانات.'
               : analysis.limitations
@@ -483,7 +488,7 @@ export class GeoIndexApp {
       const dateRange = this.getDateRange();
       const resolution = `${document.getElementById('resolution-select')?.value || '30'} متر`;
       if (!this.state.studyArea && analysis.requiredInputs.includes('studyArea')) {
-        throw new Error('اختر مدينة من البحث أولا ليتم تحديد منطقة الدراسة تلقائيا، أو ارفع مضلعا عند الحاجة.');
+        throw new Error('اختر مدينة من البحث أولا ليتم تحديد منطقة الدراسة تلقائيا.');
       }
 
       let result;
@@ -497,7 +502,7 @@ export class GeoIndexApp {
       }
 
       if (!result && !analysis.browserSupported) {
-        throw new Error(analysis.limitations || 'هذا التحليل يحتاج خادم GEE مفعلا أو بيانات إضافية.');
+        throw new Error(analysis.limitations || 'هذا التحليل يحتاج ربط Google Earth Engine أو بيانات إضافية.');
       }
 
       if (!result && rasterAnalyses.has(analysis.id)) {
@@ -556,7 +561,7 @@ export class GeoIndexApp {
   }
 
   async runGeeAnalysis(analysis, dateRange, resolution) {
-    this.setProgress(`جاري استدعاء ${analysis.name_ar} من خادم GEE...`);
+    this.setProgress(`جاري حساب ${analysis.name_ar} مباشرة من Google Earth Engine...`);
     const result = await this.geeClient.runAnalysis(analysis.id, this.state.studyArea, dateRange, resolution, {
       areaName: this.state.areaName,
       name: analysis.name_ar,
@@ -588,9 +593,11 @@ export class GeoIndexApp {
   }
 
   getDateRange() {
+    const year = Number(document.getElementById('analysis-year')?.value || new Date().getFullYear() - 1);
     return {
-      start: document.getElementById('date-start')?.value || null,
-      end: document.getElementById('date-end')?.value || null
+      year,
+      start: document.getElementById('date-start')?.value || `${year}-01-01`,
+      end: document.getElementById('date-end')?.value || `${year}-12-31`
     };
   }
 
@@ -736,28 +743,12 @@ export class GeoIndexApp {
     try {
       const projectId = document.getElementById('gee-project-id')?.value;
       const oauthClientId = document.getElementById('gee-client-id')?.value;
-      const assetId = document.getElementById('gee-asset-id')?.value;
-      const serverUrl = document.getElementById('gee-server-url')?.value;
-      await this.geeClient.authenticate({ projectId, oauthClientId, assetId, serverUrl });
+      await this.geeClient.authenticate({ projectId, oauthClientId });
       this.populateAuthInputs();
-      await this.loadGeeDefaultMap({ silent: true });
       await this.runAnalysisForCurrentSelection({ auto: true });
     } catch (error) {
       this.state.geeStatus = 'failed';
       this.updateGeeStatus(error.message);
-      this.showError(error);
-    }
-  }
-
-  async loadGeeAsset() {
-    try {
-      const assetId = document.getElementById('gee-asset-id')?.value;
-      const serverUrl = document.getElementById('gee-server-url')?.value;
-      if (serverUrl) this.geeClient.serverUrl = serverUrl.trim().replace(/\/+$/, '');
-      this.geeClient.saveSession();
-      if (assetId) await this.geeClient.loadAsset(assetId);
-      await this.loadGeeDefaultMap();
-    } catch (error) {
       this.showError(error);
     }
   }
@@ -779,7 +770,7 @@ export class GeoIndexApp {
         rampName: mapResult.rampName || analysis?.colorRamp,
         bounds: mapResult.bbox
       });
-      if (!silent) this.setProgress('تم تحميل خريطة GEE من الخادم المرتبط.');
+      if (!silent) this.setProgress('تم تحميل خريطة Google Earth Engine مباشرة.');
     } catch (error) {
       if (!silent) this.showError(error);
     }

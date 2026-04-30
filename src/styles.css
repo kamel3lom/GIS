@@ -513,10 +513,6 @@ h3 {
   color: var(--text) !important;
 }
 
-.leaflet-draw-toolbar a {
-  filter: invert(1) hue-rotate(175deg);
-}
-
 .coordinate-display,
 .north-arrow-control,
 .map-legend {

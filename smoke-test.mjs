@@ -26,14 +26,19 @@ const index = readFileSync(join(root, 'index.html'), 'utf8');
 check('page bootstraps module', index.includes('./src/main.js'));
 
 const app = readFileSync(join(root, 'src/app.js'), 'utf8');
+const selector = readFileSync(join(root, 'src/components/AnalysisSelector.js'), 'utf8');
+const mapView = readFileSync(join(root, 'src/components/MapView.js'), 'utf8');
 check('Leaflet map container referenced', app.includes('id="map"'));
-check('draw controls wired', app.includes('data-draw'));
-check('GeoJSON upload wired', app.includes('handleFileUpload'));
-check('sample analysis wired', app.includes('loadSampleData'));
+check('direct GEE selector filters simple options', selector.includes('directGeeAnalysisIds'));
+check('draw toolbar hidden by default', !mapView.includes('this.addDrawToolbar();'));
+check(
+  'leaflet draw plugin not imported',
+  !mapView.includes('leaflet-draw') && !readFileSync(join(root, 'src/main.js'), 'utf8').includes('leaflet.draw.css')
+);
 check('exports wired', app.includes('export-poster-vertical') && app.includes('export-geojson'));
 
 const analysisCatalog = readJson('src/data/analysis-catalog.json');
-const requiredAnalyses = ['ndvi', 'ndwi', 'mndwi', 'ndbi', 'lst', 'buffer', 'overlay', 'point_in_polygon'];
+const requiredAnalyses = ['ndvi', 'ndwi', 'mndwi', 'ndbi', 'lst', 'precipitation', 'no2', 'co2', 'landcover'];
 check(
   'required analyses in catalog',
   requiredAnalyses.every((id) => analysisCatalog.some((item) => item.id === id))
@@ -55,8 +60,10 @@ const allSourceText = [
 ].join('\n');
 check('no obvious secret keys committed', !/(sk-[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})/.test(allSourceText));
 check(
-  'GEE analysis requires configured server and session storage',
-  allSourceText.includes('رابط خادم') && allSourceText.includes('sessionStorage')
+  'GEE analysis runs direct without configured server',
+  allSourceText.includes('earthengine-api.min.js') &&
+    allSourceText.includes('Google Earth Engine') &&
+    !allSourceText.includes('GEE_ANALYSIS_ENDPOINT')
 );
 
 const failed = checks.filter((item) => !item.ok);
@@ -69,4 +76,4 @@ if (failed.length) {
   process.exit(1);
 }
 
-console.log('\nSmoke checks passed. For visual QA, run npm run dev and test drawing/upload/export in the browser.');
+console.log('\nSmoke checks passed. For visual QA, run npm run dev and test city/year/GEE analysis in the browser.');

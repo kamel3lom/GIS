@@ -33,6 +33,7 @@ export async function geocodePlace(query, language = 'ar') {
     q: query,
     limit: '5',
     addressdetails: '1',
+    polygon_geojson: '1',
     'accept-language': language
   });
 
@@ -50,6 +51,7 @@ export async function geocodePlace(query, language = 'ar') {
     lat: Number(item.lat),
     lon: Number(item.lon),
     bbox: item.boundingbox?.map(Number),
+    geojson: item.geojson,
     zoom: item.type === 'city' ? 11 : 13,
     source: 'nominatim'
   }));

@@ -20,34 +20,23 @@ export function renderTabs(activeTab = 'analysis') {
 }
 
 export function renderStudyAreaControls() {
+  const currentYear = new Date().getFullYear();
+  const defaultYear = currentYear - 1;
   return `
     <section class="control-section">
       <div class="section-heading">
-        <h2>2. منطقة الدراسة</h2>
-        <span>بحث، رسم، أو رفع ملف</span>
+        <h2>1. المدينة والسنة</h2>
+        <span>بدون رسم أو ملفات</span>
       </div>
       <form id="search-form" class="search-row">
-        <input id="place-search" type="search" placeholder="ابحث عن دولة، مدينة، قرية..." autocomplete="off" />
-        <button type="submit">بحث</button>
+        <input id="place-search" type="search" placeholder="ابحث عن مدينة أو عاصمة..." autocomplete="off" />
+        <button type="submit">اختيار المدينة</button>
       </form>
       <div id="search-results" class="search-results"></div>
-      <div class="tool-grid">
-        <button data-draw="marker" type="button">رسم نقطة</button>
-        <button data-draw="polyline" type="button">رسم خط</button>
-        <button data-draw="polygon" type="button">رسم مضلع</button>
-        <button data-draw="rectangle" type="button">مستطيل AOI</button>
-        <button id="measure-distance" data-draw="polyline" type="button">قياس مسافة</button>
-        <button id="measure-area" data-draw="polygon" type="button">قياس مساحة</button>
-        <button id="clear-drawings" class="danger-action" type="button">حذف الرسومات</button>
-      </div>
-      <label class="file-drop">
-        <span>رفع GeoJSON / KML / GPX / CSV / Shapefile ZIP / GeoTIFF</span>
-        <input id="file-upload" type="file" accept=".geojson,.json,.kml,.gpx,.csv,.zip,.tif,.tiff" />
-      </label>
-      <button id="load-sample" class="secondary-action" type="button">تحميل بيانات تجريبية محسوبة</button>
       <div class="date-grid">
-        <label><span>من</span><input id="date-start" type="date" /></label>
-        <label><span>إلى</span><input id="date-end" type="date" /></label>
+        <label><span>السنة</span><input id="analysis-year" type="number" min="1984" max="${currentYear}" value="${defaultYear}" /></label>
+        <input id="date-start" type="hidden" />
+        <input id="date-end" type="hidden" />
         <label><span>الدقة</span>
           <select id="resolution-select">
             <option value="10">10 متر</option>
@@ -60,6 +49,7 @@ export function renderStudyAreaControls() {
           </select>
         </label>
       </div>
+      <p class="microcopy">اختيار المدينة يحول حدودها تلقائيا إلى منطقة دراسة ويشغل التحليل عبر GEE عند توفر الربط.</p>
     </section>
   `;
 }

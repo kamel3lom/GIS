@@ -16,21 +16,12 @@ export function renderAuthPanel(geeStatus = 'disconnected') {
         <span>OAuth Client ID</span>
         <input id="gee-client-id" type="text" placeholder="OAuth Web Client ID من Google Cloud" autocomplete="off" />
       </label>
-      <label class="field">
-        <span>Asset ID اختياري</span>
-        <input id="gee-asset-id" type="text" placeholder="مثال: users/name/asset أو projects/.../assets/..." autocomplete="off" />
-      </label>
-      <label class="field">
-        <span>رابط خادم تحليلات GEE</span>
-        <input id="gee-server-url" type="url" placeholder="مثال: https://your-server.com أو http://localhost:8787" autocomplete="off" />
-      </label>
       <div class="tool-grid two">
-        <button id="gee-connect" type="button">ربط وحفظ الجلسة</button>
-        <button id="gee-load-asset" type="button">تحميل خريطة GEE</button>
+        <button id="gee-connect" type="button">ربط Google Earth Engine</button>
         <button id="gee-disconnect" class="danger-action" type="button">قطع الربط</button>
         <a class="button-link" href="./docs/GEE_SETUP_AR.md" target="_blank" rel="noreferrer">فتح دليل الإعداد</a>
       </div>
-      <p class="microcopy">يحفظ الربط داخل جلسة الصفحة فقط، ويبقى متصلا عند التنقل بين التبويبات حتى تغلق الصفحة أو تنتهي صلاحية Google token. يستدعي التحليل والخرائط من خادم GEE الذي تضيف رابطه هنا.</p>
+      <p class="microcopy">لا تحتاج إلى خادم GEE أو Asset أو رسم مضلع. بعد الربط اختر مدينة وسنة ومؤشرا، وسيحسب Google Earth Engine الخريطة والإحصاءات مباشرة.</p>
     </section>
     <section class="control-section auth-panel">
       <div class="section-heading">

@@ -1,5 +1,4 @@
 import L from 'leaflet';
-import 'leaflet-draw';
 import { featureCollectionBounds, formatArea, formatDistance, summarizeGeoJSON, turf } from '../lib/geospatial';
 import { getTileLayerOptions, sourceById } from '../lib/sourcesRegistry';
 import { colorRamps } from '../lib/rasterAnalysis';
@@ -34,10 +33,8 @@ export class MapView {
     this.drawnItems.addTo(this.map);
     this.uploadedLayers.addTo(this.map);
     this.setBaseSource('osm');
-    this.addDrawToolbar();
     this.addCoordinateDisplay();
     this.addNorthArrow();
-    this.bindDrawEvents();
     this.updateLegend(null);
     return this;
   }
@@ -246,7 +243,7 @@ export class MapView {
   }
 
   addGeeTileLayer(tileUrl, { opacity = 0.72, rampName = 'overlay', bounds = null } = {}) {
-    if (!tileUrl) throw new Error('خادم GEE لم يرجع رابط بلاطات صالحا.');
+    if (!tileUrl) throw new Error('Google Earth Engine لم يرجع رابط بلاطات صالحا.');
     if (this.geeLayer) this.map.removeLayer(this.geeLayer);
     this.geeLayer = L.tileLayer(tileUrl, {
       opacity,
@@ -304,7 +301,7 @@ export class MapView {
     this.legendControl.onAdd = () => {
       const div = L.DomUtil.create('div', 'map-legend');
       if (!rampName || !colorRamps[rampName]) {
-        div.innerHTML = '<strong>مفتاح الخريطة</strong><span>ارسم أو شغّل تحليلا لعرض المفتاح.</span>';
+        div.innerHTML = '<strong>مفتاح الخريطة</strong><span>اختر مدينة ومؤشرا ثم شغّل التحليل لعرض المفتاح.</span>';
         return div;
       }
       const ramp = colorRamps[rampName];

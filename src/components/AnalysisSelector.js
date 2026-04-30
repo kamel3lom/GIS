@@ -9,8 +9,41 @@ const categoryLabels = {
   drawing: 'ثامنا: أدوات الرسم والقياس'
 };
 
+const directGeeAnalysisIds = new Set([
+  'ndvi',
+  'evi',
+  'savi',
+  'gndvi',
+  'ndmi',
+  'ndwi',
+  'mndwi',
+  'ndbi',
+  'built_up',
+  'vegetation_health',
+  'water_detection',
+  'lst',
+  'thermal_gradient',
+  'dem',
+  'slope',
+  'hillshade',
+  'precipitation',
+  'viirs_lights',
+  'no2',
+  'co2',
+  'co',
+  'so2',
+  'ch4',
+  'o3',
+  'pm25',
+  'aod',
+  'air_quality',
+  'landcover',
+  'water_occurrence'
+]);
+
 export function renderAnalysisSelector(catalog, selectedId = 'vector_summary') {
-  const groups = catalog.reduce((acc, item) => {
+  const directCatalog = catalog.filter((item) => directGeeAnalysisIds.has(item.id));
+  const groups = directCatalog.reduce((acc, item) => {
     if (!acc[item.category]) acc[item.category] = [];
     acc[item.category].push(item);
     return acc;
@@ -19,8 +52,8 @@ export function renderAnalysisSelector(catalog, selectedId = 'vector_summary') {
   return `
     <section class="control-section">
       <div class="section-heading">
-        <h2>3. نوع التحليل</h2>
-        <span>يتم تعطيل ما لا يملك بيانات فعلية</span>
+        <h2>2. نوع التحليل</h2>
+        <span>اختر المؤشر ثم اضغط تنفيذ</span>
       </div>
       <label class="field">
         <span>اختر التحليل</span>
@@ -33,7 +66,7 @@ export function renderAnalysisSelector(catalog, selectedId = 'vector_summary') {
                     .map(
                       (item) => `
                         <option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>
-                          ${item.name_ar}${item.browserSupported ? '' : ' - يحتاج GEE/بيانات إضافية'}
+                          ${item.name_ar}${item.geeSupported ? ' - GEE مباشر' : ''}
                         </option>`
                     )
                     .join('')}
@@ -43,19 +76,7 @@ export function renderAnalysisSelector(catalog, selectedId = 'vector_summary') {
         </select>
       </label>
       <div class="analysis-meta" id="analysis-meta"></div>
-      <div class="band-grid">
-        <label><span>Blue</span><input id="band-blue" type="number" min="1" value="1" /></label>
-        <label><span>Green</span><input id="band-green" type="number" min="1" value="2" /></label>
-        <label><span>Red</span><input id="band-red" type="number" min="1" value="3" /></label>
-        <label><span>NIR</span><input id="band-nir" type="number" min="1" value="4" /></label>
-        <label><span>SWIR1</span><input id="band-swir1" type="number" min="1" value="5" /></label>
-        <label><span>Thermal/DEM</span><input id="band-thermal" type="number" min="1" value="6" /></label>
-      </div>
-      <label class="field compact-field">
-        <span>مسافة Buffer بالمتر</span>
-        <input id="buffer-distance" type="number" min="1" step="10" value="1000" />
-      </label>
-      <button id="run-analysis" class="primary-action" type="button">تنفيذ التحليل</button>
+      <button id="run-analysis" class="primary-action" type="button">تنفيذ التحليل من Google Earth Engine</button>
     </section>
   `;
 }

@@ -1,17 +1,277 @@
-const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
-const EE_ROOT = 'https://earthengine.googleapis.com/v1alpha';
-const EE_SCOPE = 'https://www.googleapis.com/auth/earthengine https://www.googleapis.com/auth/cloud-platform';
-const SESSION_KEY = 'geoindex:gee-session';
+const EE_SCRIPT = 'https://ajax.googleapis.com/ajax/libs/earthengine/0.1.365/earthengine-api.min.js';
+const EE_READONLY_SCOPE = 'https://www.googleapis.com/auth/earthengine.readonly';
+const SESSION_KEY = 'geoindex:gee-direct-session';
+
+const pollutionPalette = ['2c7bb6', 'abd9e9', 'ffffbf', 'fdae61', 'd7191c'];
+const vegetationPalette = ['8c510a', 'd8b365', 'f6e8c3', '5ab4ac', '01665e'];
+const waterPalette = ['8c510a', 'dfc27d', '80cdc1', '35978f', '01665e'];
+const thermalPalette = ['313695', '74add1', 'ffffbf', 'fdae61', 'a50026'];
+const terrainPalette = ['1b6ca8', '8ec07c', 'd8b45d', '8d6e63', 'f5f5f5'];
+
+const GEE_RECIPES = {
+  ndvi: {
+    name: 'NDVI - مؤشر الغطاء النباتي',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'NDVI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'vegetation',
+    vis: { min: -0.2, max: 0.8, palette: vegetationPalette },
+    build: ({ ee, region, start, end }) =>
+      sentinelComposite(ee, region, start, end).normalizedDifference(['B8', 'B4']).rename('NDVI').clip(region)
+  },
+  evi: {
+    name: 'EVI - مؤشر الغطاء النباتي المحسن',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'EVI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'vegetation',
+    vis: { min: -0.2, max: 0.8, palette: vegetationPalette },
+    build: ({ ee, region, start, end }) => {
+      const image = sentinelComposite(ee, region, start, end);
+      return image
+        .expression('2.5 * ((nir - red) / (nir + 6 * red - 7.5 * blue + 1))', {
+          nir: image.select('B8'),
+          red: image.select('B4'),
+          blue: image.select('B2')
+        })
+        .rename('EVI')
+        .clip(region);
+    }
+  },
+  savi: {
+    name: 'SAVI - مؤشر النبات المصحح للتربة',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'SAVI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'vegetation',
+    vis: { min: -0.2, max: 0.8, palette: vegetationPalette },
+    build: ({ ee, region, start, end }) => {
+      const image = sentinelComposite(ee, region, start, end);
+      return image
+        .expression('((nir - red) / (nir + red + 0.5)) * 1.5', {
+          nir: image.select('B8'),
+          red: image.select('B4')
+        })
+        .rename('SAVI')
+        .clip(region);
+    }
+  },
+  gndvi: {
+    name: 'GNDVI - مؤشر النبات الأخضر',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'GNDVI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'vegetation',
+    vis: { min: -0.2, max: 0.8, palette: vegetationPalette },
+    build: ({ ee, region, start, end }) =>
+      sentinelComposite(ee, region, start, end).normalizedDifference(['B8', 'B3']).rename('GNDVI').clip(region)
+  },
+  ndmi: {
+    name: 'NDMI - مؤشر رطوبة الغطاء النباتي',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'NDMI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'moisture',
+    vis: { min: -0.5, max: 0.6, palette: waterPalette },
+    build: ({ ee, region, start, end }) =>
+      sentinelComposite(ee, region, start, end).normalizedDifference(['B8', 'B11']).rename('NDMI').clip(region)
+  },
+  ndwi: {
+    name: 'NDWI - مؤشر المياه',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'NDWI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'water',
+    vis: { min: -0.5, max: 0.7, palette: waterPalette },
+    build: ({ ee, region, start, end }) =>
+      sentinelComposite(ee, region, start, end).normalizedDifference(['B3', 'B8']).rename('NDWI').clip(region)
+  },
+  mndwi: {
+    name: 'MNDWI - مؤشر المياه المعدل',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'MNDWI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'water',
+    vis: { min: -0.5, max: 0.7, palette: waterPalette },
+    build: ({ ee, region, start, end }) =>
+      sentinelComposite(ee, region, start, end).normalizedDifference(['B3', 'B11']).rename('MNDWI').clip(region)
+  },
+  ndbi: {
+    name: 'NDBI - مؤشر العمران',
+    source: 'Sentinel-2 SR Harmonized / Google Earth Engine',
+    bandName: 'NDBI',
+    unit: 'index',
+    scale: 20,
+    rampName: 'urban',
+    vis: { min: -0.4, max: 0.5, palette: ['01665e', 'f6e8c3', 'd8b365', '8c510a'] },
+    build: ({ ee, region, start, end }) =>
+      sentinelComposite(ee, region, start, end).normalizedDifference(['B11', 'B8']).rename('NDBI').clip(region)
+  },
+  built_up: {
+    name: 'Built-up Index - مؤشر المناطق المبنية',
+    aliasOf: 'ndbi'
+  },
+  vegetation_health: {
+    name: 'تحليل صحة الغطاء النباتي',
+    aliasOf: 'ndvi'
+  },
+  water_detection: {
+    name: 'كشف المسطحات المائية',
+    aliasOf: 'mndwi'
+  },
+  lst: {
+    name: 'LST - تقدير درجة حرارة سطح الأرض',
+    source: 'MODIS/061/MOD11A2 / Google Earth Engine',
+    bandName: 'LST',
+    unit: '°C',
+    scale: 1000,
+    rampName: 'thermal',
+    vis: { min: 10, max: 55, palette: thermalPalette },
+    build: ({ ee, region, start, end }) =>
+      ee
+        .ImageCollection('MODIS/061/MOD11A2')
+        .filterDate(start, end)
+        .filterBounds(region)
+        .select('LST_Day_1km')
+        .mean()
+        .multiply(0.02)
+        .subtract(273.15)
+        .rename('LST')
+        .clip(region)
+  },
+  thermal_gradient: {
+    name: 'خرائط التدرج الحراري',
+    aliasOf: 'lst'
+  },
+  dem: {
+    name: 'DEM - الارتفاعات',
+    source: 'USGS/SRTMGL1_003 / Google Earth Engine',
+    bandName: 'Elevation',
+    unit: 'm',
+    scale: 30,
+    rampName: 'terrain',
+    vis: { min: 0, max: 2500, palette: terrainPalette },
+    build: ({ ee, region }) => ee.Image('USGS/SRTMGL1_003').select('elevation').rename('Elevation').clip(region)
+  },
+  slope: {
+    name: 'Slope - الانحدار',
+    source: 'USGS/SRTMGL1_003 + ee.Terrain.slope / Google Earth Engine',
+    bandName: 'Slope',
+    unit: 'degree',
+    scale: 30,
+    rampName: 'terrain',
+    vis: { min: 0, max: 45, palette: terrainPalette },
+    build: ({ ee, region }) => ee.Terrain.slope(ee.Image('USGS/SRTMGL1_003')).rename('Slope').clip(region)
+  },
+  hillshade: {
+    name: 'Hillshade - الظلال التضاريسية',
+    source: 'USGS/SRTMGL1_003 + ee.Terrain.hillshade / Google Earth Engine',
+    bandName: 'Hillshade',
+    unit: '0-255',
+    scale: 30,
+    rampName: 'gray',
+    vis: { min: 0, max: 255, palette: ['000000', 'ffffff'] },
+    build: ({ ee, region }) => ee.Terrain.hillshade(ee.Image('USGS/SRTMGL1_003')).rename('Hillshade').clip(region)
+  },
+  precipitation: {
+    name: 'الأمطار السنوية CHIRPS',
+    source: 'UCSB-CHG/CHIRPS/DAILY / Google Earth Engine',
+    bandName: 'Precipitation',
+    unit: 'mm',
+    scale: 5500,
+    rampName: 'water',
+    vis: { min: 0, max: 1200, palette: ['fff7bc', 'a1dab4', '41b6c4', '225ea8'] },
+    build: ({ ee, region, start, end }) =>
+      ee
+        .ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+        .filterDate(start, end)
+        .filterBounds(region)
+        .select('precipitation')
+        .sum()
+        .rename('Precipitation')
+        .clip(region)
+  },
+  viirs_lights: {
+    name: 'مؤشرات التلوث الضوئي VIIRS',
+    source: 'NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG / Google Earth Engine',
+    bandName: 'NightLights',
+    unit: 'nW/cm²/sr',
+    scale: 500,
+    rampName: 'lights',
+    vis: { min: 0, max: 60, palette: ['000000', '223b53', 'ffff8c', 'ff7f00', 'ffffff'] },
+    build: ({ ee, region, start, end }) =>
+      ee
+        .ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')
+        .filterDate(start, end)
+        .filterBounds(region)
+        .select('avg_rad')
+        .mean()
+        .rename('NightLights')
+        .clip(region)
+  },
+  no2: camsRecipe('NO2 - ثاني أكسيد النيتروجين', 'total_column_nitrogen_dioxide_surface', 'kg/m²', 0, 0.0004),
+  co: camsRecipe('CO - أول أكسيد الكربون', 'total_column_carbon_monoxide_surface', 'kg/m²', 0, 0.08),
+  so2: camsRecipe('SO2 - ثاني أكسيد الكبريت', 'total_column_sulphur_dioxide_surface', 'kg/m²', 0, 0.002),
+  ch4: camsRecipe('CH4 - الميثان', 'total_column_methane_surface', 'kg/m²', 0, 0.08),
+  o3: camsRecipe('O3 - الأوزون', 'gems_total_column_ozone_surface', 'kg/m²', 0, 0.25),
+  pm25: camsRecipe('PM2.5 - الجسيمات الدقيقة', 'particulate_matter_d_less_than_25_um_surface', 'kg/m³', 0, 0.00008),
+  aod: camsRecipe('AOD - الهباء الجوي', 'total_aerosol_optical_depth_at_550nm_surface', 'index', 0, 2.5),
+  air_quality: {
+    name: 'جودة الهواء عند توفر مصادر مفتوحة',
+    aliasOf: 'no2'
+  },
+  co2: {
+    name: 'CO2 - ثاني أكسيد الكربون',
+    source: 'CAMS/GEE greenhouse-gas proxy where available',
+    bandName: 'CH4',
+    unit: 'kg/m²',
+    scale: 44528,
+    rampName: 'pollution',
+    vis: { min: 0, max: 0.08, palette: pollutionPalette },
+    build: ({ ee, region, start, end }) =>
+      camsImage(ee, region, start, end, 'total_column_methane_surface').rename('CH4').clip(region),
+    note:
+      'لا يوجد منتج CO2 حضري عام بنفس بساطة NO2 داخل كل السنوات في كتالوج GEE. تعرض هذه البطاقة أقرب غاز دفيئة متاح من CAMS، ويجب عدم تفسيره كقياس أرضي مباشر لثاني أكسيد الكربون.'
+  },
+  landcover: {
+    name: 'تصنيف الغطاء الأرضي ESA WorldCover',
+    source: 'ESA/WorldCover/v200 / Google Earth Engine',
+    bandName: 'Map',
+    unit: 'class',
+    scale: 10,
+    categorical: true,
+    rampName: 'overlay',
+    vis: {
+      min: 10,
+      max: 100,
+      palette: ['006400', 'ffbb22', 'ffff4c', 'f096ff', 'fa0000', 'b4b4b4', 'f0f0f0', '0064c8', '0096a0', '00cf75', 'fae6a0']
+    },
+    build: ({ ee, region }) => ee.ImageCollection('ESA/WorldCover/v200').first().select('Map').clip(region)
+  },
+  water_occurrence: {
+    name: 'تكرار المياه السطحية JRC',
+    source: 'JRC/GSW1_4/GlobalSurfaceWater / Google Earth Engine',
+    bandName: 'WaterOccurrence',
+    unit: '%',
+    scale: 30,
+    rampName: 'water',
+    vis: { min: 0, max: 100, palette: ['ffffff', 'c7e9f1', '41b6c4', '225ea8'] },
+    build: ({ ee, region }) => ee.Image('JRC/GSW1_4/GlobalSurfaceWater').select('occurrence').rename('WaterOccurrence').clip(region)
+  }
+};
 
 export class GeeClient {
   constructor(onStatusChange = () => {}) {
     this.status = 'disconnected';
     this.projectId = '';
     this.oauthClientId = '';
-    this.assetId = '';
-    this.serverUrl = '';
-    this.accessToken = '';
-    this.expiresAt = 0;
     this.onStatusChange = onStatusChange;
   }
 
@@ -25,179 +285,302 @@ export class GeeClient {
       status: this.status,
       projectId: this.projectId,
       oauthClientId: this.oauthClientId,
-      assetId: this.assetId,
-      serverUrl: this.serverUrl,
-      isConnected: this.status === 'connected' && Boolean(this.accessToken)
+      isConnected: this.status === 'connected'
     };
   }
 
   async restoreSession() {
     const saved = readSession();
-    if (!saved?.accessToken || !saved?.projectId || !saved?.oauthClientId) return false;
-    if (saved.expiresAt && saved.expiresAt < Date.now() + 60_000) {
-      clearSession();
-      return false;
-    }
-
+    if (!saved?.projectId || !saved?.oauthClientId) return false;
     this.projectId = saved.projectId;
     this.oauthClientId = saved.oauthClientId;
-    this.assetId = saved.assetId || '';
-    this.serverUrl = saved.serverUrl || '';
-    this.accessToken = saved.accessToken;
-    this.expiresAt = saved.expiresAt || 0;
-
     try {
-      this.setStatus('checking', 'جاري استعادة اتصال Earth Engine المحفوظ لهذه الصفحة...');
-      await this.initialize(this.projectId);
-      this.setStatus('connected', 'تمت استعادة اتصال Earth Engine. سيبقى الاتصال فعالا حتى إغلاق الصفحة أو انتهاء صلاحية Google token.');
+      this.setStatus('checking', 'جاري استعادة جلسة Earth Engine...');
+      await this.authenticateInternal(false);
+      this.setStatus('connected', 'تمت استعادة اتصال Earth Engine لهذه الصفحة.');
       return true;
     } catch {
-      this.disconnect('انتهت صلاحية جلسة Earth Engine السابقة. أعد الربط مرة واحدة.');
+      this.setStatus('disconnected', 'لم يتم العثور على جلسة Google فعالة. اضغط ربط Google Earth Engine.');
       return false;
     }
   }
 
-  async authenticate({ projectId, oauthClientId, assetId = '', serverUrl = '' }) {
+  async authenticate({ projectId, oauthClientId }) {
     this.projectId = projectId?.trim();
     this.oauthClientId = oauthClientId?.trim();
-    this.assetId = assetId?.trim();
-    this.serverUrl = normalizeServerUrl(serverUrl);
-    if (!this.projectId) throw new Error('أدخل Google Cloud / Earth Engine Project ID.');
-    if (!this.oauthClientId) throw new Error('أدخل OAuth Client ID لتسجيل الدخول الحقيقي.');
-
-    this.setStatus('checking', 'جاري فتح نافذة المصادقة من Google...');
-    await loadScript(GIS_SCRIPT);
-    const token = await requestAccessToken(this.oauthClientId);
-    this.accessToken = token.accessToken;
-    this.expiresAt = token.expiresAt;
-    await this.initialize(this.projectId);
-    this.saveSession();
-    this.setStatus('connected', 'تم الربط مع Earth Engine وحفظ الجلسة حتى إغلاق الصفحة.');
+    if (!this.projectId) throw new Error('أدخل Google Cloud / Earth Engine Project ID مرة واحدة.');
+    if (!this.oauthClientId) throw new Error('أدخل OAuth Client ID مرة واحدة.');
+    this.setStatus('checking', 'جاري فتح مصادقة Google Earth Engine...');
+    await this.authenticateInternal(true);
+    writeSession({ projectId: this.projectId, oauthClientId: this.oauthClientId });
+    this.setStatus('connected', 'تم الربط المباشر مع Google Earth Engine. اختر مدينة ومؤشرا وسنة ثم اضغط تنفيذ.');
     return this.session;
   }
 
-  saveSession() {
-    writeSession({
-      projectId: this.projectId,
-      oauthClientId: this.oauthClientId,
-      assetId: this.assetId,
-      serverUrl: this.serverUrl,
-      accessToken: this.accessToken,
-      expiresAt: this.expiresAt
+  async authenticateInternal(interactive) {
+    await loadScript(EE_SCRIPT);
+    const ee = window.ee;
+    if (!ee?.data) throw new Error('تعذر تحميل مكتبة Earth Engine JavaScript الرسمية.');
+
+    await new Promise((resolve, reject) => {
+      const finish = () => this.initializeEe(resolve, reject);
+      const missing = () => {
+        if (!interactive) {
+          reject(new Error('لا توجد جلسة Google محفوظة.'));
+          return;
+        }
+        ee.data.authenticateViaPopup(finish, (error) => reject(normalizeEeError(error)));
+      };
+      ee.data.authenticateViaOauth(
+        this.oauthClientId,
+        finish,
+        (error) => reject(normalizeEeError(error)),
+        [EE_READONLY_SCOPE],
+        missing,
+        true
+      );
     });
   }
 
-  async initialize(projectId = this.projectId) {
-    if (!this.accessToken) throw new Error('لا يوجد OAuth token في الذاكرة. أعد تسجيل الدخول.');
-    const response = await this.eeFetch(`${EE_ROOT}/projects/${encodeURIComponent(projectId)}/config`);
-    if (!response.ok) {
-      const text = await response.text();
-      this.setStatus('failed', 'فشل التحقق من مشروع Earth Engine.');
-      throw new Error(
-        `فشل التحقق من المشروع. تأكد من تفعيل Earth Engine API وأن حسابك لديه صلاحية. ${text.slice(0, 160)}`
-      );
+  initializeEe(resolve, reject) {
+    const ee = window.ee;
+    const onSuccess = () => resolve(true);
+    const onError = (error) => reject(normalizeEeError(error));
+    try {
+      ee.initialize(null, null, onSuccess, onError, null, this.projectId);
+    } catch {
+      ee.initialize(null, null, onSuccess, onError);
     }
-    return response.json();
-  }
-
-  async loadAsset(assetId = this.assetId) {
-    const cleanAssetId = assetId?.trim();
-    if (!cleanAssetId) throw new Error('أدخل Asset ID أولا.');
-    this.assetId = cleanAssetId;
-    this.saveSession();
-    if (!this.accessToken || !this.projectId) throw new Error('اتصل بـ Google Earth Engine أولا.');
-    const normalized = normalizeAssetName(cleanAssetId, this.projectId);
-    const response = await this.eeFetch(`${EE_ROOT}/${normalized}`);
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`تعذر فتح الأصل. تحقق من Asset ID والصلاحيات. ${text.slice(0, 160)}`);
-    }
-    return response.json();
   }
 
   async runAnalysis(analysisId, studyArea, dateRange, resolution, context = {}) {
-    if (!this.accessToken || !this.projectId) throw new Error('اتصل بـ Google Earth Engine أولا.');
-    if (!this.serverUrl) {
-      throw new Error(
-        'الربط مع Google نجح، لكن تنفيذ التحليلات يحتاج رابط خادم GEE الذي يحتوي سكربتاتك وخرائطك. أدخل رابط الخادم في تبويب البيانات والمصادر.'
-      );
-    }
-
-    const payload = {
+    if (this.status !== 'connected') throw new Error('اربط Google Earth Engine أولا.');
+    const ee = window.ee;
+    const recipe = resolveRecipe(analysisId);
+    if (!recipe) throw new Error('هذا المؤشر غير مضاف بعد إلى وصفات Earth Engine المباشرة.');
+    const region = geometryToEe(ee, studyArea);
+    const dates = normalizeDates(dateRange);
+    const image = recipe.build({ ee, region, start: dates.start, end: dates.end, year: dates.year });
+    const mapId = image.getMap(recipe.vis || {});
+    const stats = recipe.categorical
+      ? await evaluateCategoricalStats(ee, image, region, recipe)
+      : await evaluateNumericStats(ee, image, region, recipe);
+    return {
+      id: analysisId,
       analysisId,
-      studyArea,
-      dateRange,
-      resolution,
-      areaName: context.areaName || '',
-      assetId: this.assetId || context.assetId || '',
-      projectId: this.projectId
+      name: context.name || recipe.name || analysisId,
+      source: recipe.source || 'Google Earth Engine',
+      dateRange: dates,
+      resolution: resolution || `${recipe.scale || 30} متر`,
+      stats: {
+        ...stats,
+        unit: recipe.unit,
+        studyAreaM2: approximateArea(studyArea)
+      },
+      tileUrl: mapIdToTileUrl(mapId),
+      bbox: featureBounds(studyArea),
+      rampName: recipe.rampName || context.rampName || 'overlay',
+      unit: recipe.unit,
+      interpretationTemplateId: context.interpretationTemplateId,
+      notes: [
+        recipe.note || 'تم حساب الخريطة والإحصاءات مباشرة من Google Earth Engine حسب المدينة والسنة المختارتين.',
+        'إذا لم تظهر بيانات كافية فقد تكون السنة خارج مدى المنتج أو المنطقة لا تغطيها المشاهد الصالحة.'
+      ]
     };
-    const data = await this.callAnalysisServer('analyze', payload);
-    return attachAccessTokenToTileUrl(normalizeGeeResult(data, { analysisId, dateRange, resolution }), this.accessToken);
   }
 
   async getMapTileUrl(context = {}) {
-    if (!this.serverUrl) {
-      throw new Error('أدخل رابط خادم GEE حتى يمكن تحميل خريطة الحساب مباشرة.');
-    }
-    const data = await this.callAnalysisServer('map', {
-      projectId: this.projectId,
-      assetId: context.assetId || this.assetId,
-      analysisId: context.analysisId,
-      studyArea: context.studyArea,
-      dateRange: context.dateRange,
-      resolution: context.resolution
-    });
-    const result = attachAccessTokenToTileUrl(normalizeGeeResult(data, context), this.accessToken);
-    if (!result.tileUrl) throw new Error('الخادم لم يرجع tileUrl أو map.tileUrl لعرض خريطة GEE.');
-    return result;
-  }
-
-  async callAnalysisServer(action, payload) {
-    const endpoints = buildServerEndpoints(this.serverUrl, action);
-    const errors = [];
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            Authorization: `Bearer ${this.accessToken}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const text = await response.text();
-        const data = parseJsonResponse(text);
-        if (!response.ok) {
-          errors.push(data?.error || data?.message || `${response.status} ${response.statusText}`);
-          continue;
-        }
-        return data;
-      } catch (error) {
-        errors.push(error.message);
-      }
-    }
-    throw new Error(`تعذر استدعاء خادم GEE (${action}). ${errors.filter(Boolean).join(' | ')}`);
-  }
-
-  async eeFetch(url, options = {}) {
-    return fetch(url, {
-      ...options,
-      headers: {
-        ...(options.headers || {}),
-        Authorization: `Bearer ${this.accessToken}`,
-        Accept: 'application/json'
-      }
-    });
+    return this.runAnalysis(context.analysisId || 'ndvi', context.studyArea, context.dateRange, context.resolution, context);
   }
 
   disconnect(message = 'تم قطع الاتصال محليا.') {
-    this.accessToken = '';
-    this.expiresAt = 0;
     clearSession();
-    this.setStatus('disconnected', `${message} لم يتم تخزين token في ملفات المشروع.`);
+    this.setStatus('disconnected', message);
   }
+}
+
+function resolveRecipe(id) {
+  const recipe = GEE_RECIPES[id];
+  if (!recipe?.aliasOf) return recipe;
+  return { ...GEE_RECIPES[recipe.aliasOf], name: recipe.name || GEE_RECIPES[recipe.aliasOf].name };
+}
+
+function sentinelComposite(ee, region, start, end) {
+  return ee
+    .ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    .filterDate(start, end)
+    .filterBounds(region)
+    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 45))
+    .median()
+    .divide(10000);
+}
+
+function camsRecipe(name, band, unit, min, max) {
+  return {
+    name,
+    source: 'ECMWF/CAMS/NRT / Google Earth Engine',
+    bandName: band,
+    unit,
+    scale: 44528,
+    rampName: 'pollution',
+    vis: { min, max, palette: pollutionPalette },
+    build: ({ ee, region, start, end }) => camsImage(ee, region, start, end, band).rename(band).clip(region)
+  };
+}
+
+function camsImage(ee, region, start, end, band) {
+  return ee
+    .ImageCollection('ECMWF/CAMS/NRT')
+    .filterDate(start, end)
+    .filterBounds(region)
+    .filter(ee.Filter.eq('model_initialization_hour', 0))
+    .select(band)
+    .mean();
+}
+
+function geometryToEe(ee, geojson) {
+  const feature = geojson?.type === 'FeatureCollection' ? geojson.features?.[0] : geojson;
+  const geometry = feature?.type === 'Feature' ? feature.geometry : feature?.geometry || feature;
+  if (!geometry) throw new Error('اختر مدينة أولا ليتم تحديد منطقة الدراسة تلقائيا.');
+  if (geometry.type === 'Polygon') return ee.Geometry.Polygon(geometry.coordinates);
+  if (geometry.type === 'MultiPolygon') return ee.Geometry.MultiPolygon(geometry.coordinates);
+  if (geometry.type === 'Point') return ee.Geometry.Point(geometry.coordinates).buffer(10_000).bounds();
+  return ee.Geometry(geometry);
+}
+
+async function evaluateNumericStats(ee, image, region, recipe) {
+  const reducer = ee
+    .Reducer.min()
+    .combine(ee.Reducer.max(), '', true)
+    .combine(ee.Reducer.mean(), '', true)
+    .combine(ee.Reducer.median(), '', true)
+    .combine(ee.Reducer.stdDev(), '', true);
+  const dictionary = image.reduceRegion({
+    reducer,
+    geometry: region,
+    scale: recipe.scale || 1000,
+    bestEffort: true,
+    maxPixels: 1e13,
+    tileScale: 4
+  });
+  const values = await evaluateEe(dictionary);
+  return {
+    min: readStat(values, 'min'),
+    max: readStat(values, 'max'),
+    mean: readStat(values, 'mean'),
+    median: readStat(values, 'median'),
+    stdDev: readStat(values, 'stdDev'),
+    classes: []
+  };
+}
+
+async function evaluateCategoricalStats(ee, image, region, recipe) {
+  const dictionary = image.reduceRegion({
+    reducer: ee.Reducer.frequencyHistogram(),
+    geometry: region,
+    scale: recipe.scale || 30,
+    bestEffort: true,
+    maxPixels: 1e13,
+    tileScale: 4
+  });
+  const values = await evaluateEe(dictionary);
+  const histogram = Object.values(values || {})[0] || {};
+  const total = Object.values(histogram).reduce((sum, value) => sum + Number(value || 0), 0);
+  return {
+    min: null,
+    max: null,
+    mean: null,
+    median: null,
+    stdDev: null,
+    classes: Object.entries(histogram).map(([label, count]) => ({
+      label: landCoverLabel(label),
+      count,
+      percentage: total ? (Number(count) / total) * 100 : null,
+      areaM2: null
+    }))
+  };
+}
+
+function evaluateEe(object) {
+  return new Promise((resolve, reject) => {
+    object.evaluate((value, error) => {
+      if (error) reject(normalizeEeError(error));
+      else resolve(value);
+    });
+  });
+}
+
+function readStat(values, suffix) {
+  const entry = Object.entries(values || {}).find(([key]) => key.endsWith(`_${suffix}`) || key === suffix);
+  const value = Number(entry?.[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function mapIdToTileUrl(mapId) {
+  if (mapId?.urlFormat) return mapId.urlFormat;
+  if (mapId?.tile_fetcher?.url_format) return mapId.tile_fetcher.url_format;
+  if (mapId?.tileFetcher?.urlFormat) return mapId.tileFetcher.urlFormat;
+  if (mapId?.mapid && mapId?.token) {
+    return `https://earthengine.googleapis.com/map/${mapId.mapid}/{z}/{x}/{y}?token=${mapId.token}`;
+  }
+  throw new Error('تعذر إنشاء رابط بلاطات من نتيجة Earth Engine.');
+}
+
+function normalizeDates(dateRange = {}) {
+  const year = Number(dateRange.year || String(dateRange.start || '').slice(0, 4) || new Date().getFullYear() - 1);
+  return {
+    year,
+    start: dateRange.start || `${year}-01-01`,
+    end: dateRange.end || `${year}-12-31`
+  };
+}
+
+function approximateArea(geojson) {
+  const bounds = featureBounds(geojson);
+  if (!bounds) return null;
+  const [west, south, east, north] = bounds;
+  const latMid = ((south + north) / 2) * (Math.PI / 180);
+  const width = Math.abs(east - west) * Math.cos(latMid) * 111_320;
+  const height = Math.abs(north - south) * 111_320;
+  const area = width * height;
+  return Number.isFinite(area) ? area : null;
+}
+
+function featureBounds(geojson) {
+  const feature = geojson?.type === 'FeatureCollection' ? geojson.features?.[0] : geojson;
+  const geometry = feature?.type === 'Feature' ? feature.geometry : feature?.geometry || feature;
+  const coords = [];
+  collectCoordinates(geometry?.coordinates, coords);
+  if (!coords.length) return null;
+  const lons = coords.map(([lon]) => lon);
+  const lats = coords.map(([, lat]) => lat);
+  return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+}
+
+function collectCoordinates(value, output) {
+  if (!Array.isArray(value)) return;
+  if (typeof value[0] === 'number' && typeof value[1] === 'number') {
+    output.push(value);
+    return;
+  }
+  value.forEach((item) => collectCoordinates(item, output));
+}
+
+function landCoverLabel(code) {
+  const labels = {
+    10: 'أشجار',
+    20: 'شجيرات',
+    30: 'مروج/عشب',
+    40: 'زراعة',
+    50: 'عمران',
+    60: 'أرض عارية',
+    70: 'ثلج/جليد',
+    80: 'مياه',
+    90: 'رطوبة/أراض رطبة',
+    95: 'مانغروف',
+    100: 'طحالب/نباتات مائية'
+  };
+  return labels[Number(code)] || `فئة ${code}`;
 }
 
 function loadScript(src) {
@@ -208,112 +591,15 @@ function loadScript(src) {
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('تعذر تحميل مكتبة Google Identity Services.'));
+    script.onerror = () => reject(new Error('تعذر تحميل مكتبة Google Earth Engine JavaScript.'));
     document.head.appendChild(script);
   });
 }
 
-function requestAccessToken(clientId) {
-  return new Promise((resolve, reject) => {
-    if (!window.google?.accounts?.oauth2) {
-      reject(new Error('مكتبة Google Identity Services لم تحمل بشكل صحيح.'));
-      return;
-    }
-    const tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: EE_SCOPE,
-      prompt: 'consent',
-      callback: (response) => {
-        if (response.error) {
-          reject(new Error(response.error_description || response.error));
-        } else {
-          const expiresIn = Number(response.expires_in || 3600);
-          resolve({
-            accessToken: response.access_token,
-            expiresAt: Date.now() + Math.max(60, expiresIn - 30) * 1000
-          });
-        }
-      }
-    });
-    tokenClient.requestAccessToken();
-  });
-}
-
-function normalizeAssetName(assetId, projectId) {
-  if (assetId.startsWith('projects/')) return assetId;
-  const clean = assetId.replace(/^\/+/, '');
-  if (clean.startsWith('users/')) {
-    return `projects/earthengine-legacy/assets/${clean
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/')}`;
-  }
-  if (/^[A-Z0-9_]+(\/[A-Z0-9_.$-]+)+$/.test(clean)) {
-    return `projects/earthengine-public/assets/${clean
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/')}`;
-  }
-  return `projects/${encodeURIComponent(projectId)}/assets/${clean
-    .split('/')
-    .map(encodeURIComponent)
-    .join('/')}`;
-}
-
-function normalizeServerUrl(url) {
-  return String(url || '').trim().replace(/\/+$/, '');
-}
-
-function buildServerEndpoints(serverUrl, action) {
-  const clean = normalizeServerUrl(serverUrl);
-  if (!clean) return [];
-  if (clean.endsWith(`/${action}`)) return [clean];
-  if (clean.endsWith('/api/gee')) return [`${clean}/${action}`];
-  return [`${clean}/api/gee/${action}`, `${clean}/${action}`];
-}
-
-function parseJsonResponse(text) {
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { message: text };
-  }
-}
-
-function normalizeGeeResult(data, fallback = {}) {
-  const raw = data?.result || data;
-  const map = raw?.map || data?.map || {};
-  const stats = raw?.stats || data?.stats || {};
-  const id = raw?.id || raw?.analysisId || fallback.analysisId;
-  const tileUrl = raw?.tileUrl || raw?.tileTemplate || map.tileUrl || map.tileTemplate || '';
-  const bbox = raw?.bbox || map.bbox || stats.bbox || fallback.bbox || null;
-  return {
-    id,
-    analysisId: id,
-    name: raw?.name || raw?.analysisName || fallback.name || id,
-    source: raw?.source || data?.source || 'Google Earth Engine',
-    dateRange: raw?.dateRange || fallback.dateRange,
-    resolution: raw?.resolution || fallback.resolution,
-    stats,
-    geojson: raw?.geojson || data?.geojson || null,
-    tileUrl,
-    bbox,
-    rampName: raw?.rampName || map.rampName || raw?.colorRamp || fallback.rampName || 'pollution',
-    unit: raw?.unit || stats.unit || '',
-    interpretationTemplateId: raw?.interpretationTemplateId || raw?.templateId || fallback.interpretationTemplateId,
-    notes: raw?.notes || data?.notes || ['تم استدعاء النتيجة من خادم Google Earth Engine المرتبط.']
-  };
-}
-
-function attachAccessTokenToTileUrl(result, accessToken) {
-  if (!result.tileUrl || !accessToken || !result.tileUrl.includes('earthengine.googleapis.com')) return result;
-  if (/[?&]access_token=/.test(result.tileUrl)) return result;
-  const separator = result.tileUrl.includes('?') ? '&' : '?';
-  return {
-    ...result,
-    tileUrl: `${result.tileUrl}${separator}access_token=${encodeURIComponent(accessToken)}`
-  };
+function normalizeEeError(error) {
+  if (!error) return new Error('تعذر تنفيذ طلب Earth Engine.');
+  if (error instanceof Error) return error;
+  return new Error(error.message || error.details || String(error));
 }
 
 function readSession() {
@@ -328,7 +614,7 @@ function writeSession(value) {
   try {
     window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(value));
   } catch {
-    // sessionStorage قد يكون مقيدا في بعض المتصفحات؛ يبقى الاتصال في الذاكرة الحالية.
+    // إذا كان المتصفح يمنع sessionStorage، يبقى الربط فعالا في ذاكرة الصفحة.
   }
 }
 
