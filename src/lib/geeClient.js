@@ -1,6 +1,13 @@
 const EE_SCRIPT = 'https://ajax.googleapis.com/ajax/libs/earthengine/0.1.365/earthengine-api.min.js';
-const EE_READONLY_SCOPE = 'https://www.googleapis.com/auth/earthengine.readonly';
+const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
+const EE_AUTH_SCOPES = [
+  'https://www.googleapis.com/auth/earthengine',
+  'https://www.googleapis.com/auth/cloud-platform'
+];
+const EE_AUTH_SCOPE_TEXT = EE_AUTH_SCOPES.join(' ');
 const SESSION_KEY = 'geoindex:gee-direct-session';
+const AUTH_TIMEOUT_MS = 90_000;
+const TOKEN_REFRESH_MARGIN_MS = 60_000;
 
 const pollutionPalette = ['2c7bb6', 'abd9e9', 'ffffbf', 'fdae61', 'd7191c'];
 const vegetationPalette = ['8c510a', 'd8b365', 'f6e8c3', '5ab4ac', '01665e'];
@@ -272,6 +279,8 @@ export class GeeClient {
     this.status = 'disconnected';
     this.projectId = '';
     this.oauthClientId = '';
+    this.accessToken = '';
+    this.expiresAt = 0;
     this.onStatusChange = onStatusChange;
   }
 
@@ -294,15 +303,29 @@ export class GeeClient {
     if (!saved?.projectId || !saved?.oauthClientId) return false;
     this.projectId = saved.projectId;
     this.oauthClientId = saved.oauthClientId;
+    this.accessToken = saved.accessToken || '';
+    this.expiresAt = Number(saved.expiresAt || 0);
+    if (!hasUsableToken(this.expiresAt)) {
+      this.setStatus('disconnected', 'انتهت جلسة Google المحفوظة. اضغط ربط Google Earth Engine مرة واحدة.');
+      return false;
+    }
     try {
       this.setStatus('checking', 'جاري استعادة جلسة Earth Engine...');
-      await this.authenticateInternal(false);
+      await loadScript(EE_SCRIPT);
+      const ee = window.ee;
+      if (!ee?.data) throw new Error('تعذر تحميل مكتبة Earth Engine JavaScript الرسمية.');
+      applyAccessToken(ee, this.oauthClientId, this.accessToken, this.expiresAt);
+      await this.initializeEePromise();
       this.setStatus('connected', 'تمت استعادة اتصال Earth Engine لهذه الصفحة.');
       return true;
     } catch {
       this.setStatus('disconnected', 'لم يتم العثور على جلسة Google فعالة. اضغط ربط Google Earth Engine.');
       return false;
     }
+  }
+
+  preloadAuthLibraries() {
+    Promise.allSettled([loadScript(EE_SCRIPT), loadScript(GIS_SCRIPT)]).catch(() => {});
   }
 
   async authenticate({ projectId, oauthClientId }) {
@@ -312,7 +335,12 @@ export class GeeClient {
     if (!this.oauthClientId) throw new Error('أدخل OAuth Client ID مرة واحدة.');
     this.setStatus('checking', 'جاري فتح مصادقة Google Earth Engine...');
     await this.authenticateInternal(true);
-    writeSession({ projectId: this.projectId, oauthClientId: this.oauthClientId });
+    writeSession({
+      projectId: this.projectId,
+      oauthClientId: this.oauthClientId,
+      accessToken: this.accessToken,
+      expiresAt: this.expiresAt
+    });
     this.setStatus('connected', 'تم الربط المباشر مع Google Earth Engine. اختر مدينة ومؤشرا وسنة ثم اضغط تنفيذ.');
     return this.session;
   }
@@ -322,7 +350,24 @@ export class GeeClient {
     const ee = window.ee;
     if (!ee?.data) throw new Error('تعذر تحميل مكتبة Earth Engine JavaScript الرسمية.');
 
-    await new Promise((resolve, reject) => {
+    if (interactive) {
+      try {
+        const token = await requestGisAccessToken(this.oauthClientId);
+        this.accessToken = token.accessToken;
+        this.expiresAt = token.expiresAt;
+        applyAccessToken(ee, this.oauthClientId, this.accessToken, this.expiresAt);
+        await this.initializeEePromise();
+        return;
+      } catch (error) {
+        console.warn('Google Identity Services auth failed; falling back to Earth Engine OAuth helper.', error);
+      }
+    }
+
+    if (!interactive && (!this.accessToken || !hasUsableToken(this.expiresAt))) {
+      throw new Error('لا توجد جلسة Google فعالة محفوظة لهذه الصفحة.');
+    }
+
+    await withTimeout(new Promise((resolve, reject) => {
       const finish = () => this.initializeEe(resolve, reject);
       const missing = () => {
         if (!interactive) {
@@ -335,11 +380,20 @@ export class GeeClient {
         this.oauthClientId,
         finish,
         (error) => reject(normalizeEeError(error)),
-        [EE_READONLY_SCOPE],
+        EE_AUTH_SCOPES,
         missing,
-        true
+        false
       );
-    });
+    }), AUTH_TIMEOUT_MS, 'انتهت مهلة مصادقة Google Earth Engine. تأكد أن النوافذ المنبثقة مسموحة وأن OAuth Client ID وAuthorized JavaScript origin صحيحان.');
+    const token = readEeAuthToken(ee);
+    if (token) {
+      this.accessToken = token.accessToken;
+      this.expiresAt = token.expiresAt;
+    }
+  }
+
+  initializeEePromise() {
+    return new Promise((resolve, reject) => this.initializeEe(resolve, reject));
   }
 
   initializeEe(resolve, reject) {
@@ -593,6 +647,86 @@ function loadScript(src) {
     script.onload = () => resolve();
     script.onerror = () => reject(new Error('تعذر تحميل مكتبة Google Earth Engine JavaScript.'));
     document.head.appendChild(script);
+  });
+}
+
+function requestGisAccessToken(clientId) {
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      loadScript(GIS_SCRIPT)
+        .then(() => {
+          const googleAuth = window.google?.accounts?.oauth2;
+          if (!googleAuth?.initTokenClient) {
+            reject(new Error('تعذر تحميل مكتبة Google Identity Services.'));
+            return;
+          }
+          const tokenClient = googleAuth.initTokenClient({
+            client_id: clientId,
+            scope: EE_AUTH_SCOPE_TEXT,
+            include_granted_scopes: true,
+            callback: (response) => {
+              if (response?.error) {
+                reject(new Error(response.error_description || response.error));
+                return;
+              }
+              if (!response?.access_token) {
+                reject(new Error('لم ترجع Google رمز وصول صالحا.'));
+                return;
+              }
+              const expiresIn = Number(response.expires_in || 3600);
+              resolve({
+                accessToken: response.access_token,
+                expiresAt: Date.now() + Math.max(60, expiresIn) * 1000
+              });
+            },
+            error_callback: (error) => {
+              reject(new Error(error?.message || error?.type || 'فشلت نافذة مصادقة Google.'));
+            }
+          });
+          tokenClient.requestAccessToken();
+        })
+        .catch(reject);
+    }),
+    AUTH_TIMEOUT_MS,
+    'لم تكتمل نافذة تسجيل الدخول إلى Google. إذا أغلقتها أو منعها المتصفح فاسمح بالنوافذ المنبثقة ثم اضغط الربط مرة أخرى.'
+  );
+}
+
+function applyAccessToken(ee, clientId, accessToken, expiresAt) {
+  if (!ee?.data?.setAuthToken || !accessToken) return;
+  const expiresInSeconds = Math.max(60, Math.floor((Number(expiresAt || 0) - Date.now()) / 1000));
+  ee.data.setAuthToken(clientId, 'Bearer', accessToken, expiresInSeconds, EE_AUTH_SCOPES, null, false);
+}
+
+function readEeAuthToken(ee) {
+  const token = ee?.data?.getAuthToken?.();
+  const accessToken = token?.access_token || token?.accessToken;
+  if (!accessToken) return null;
+  const expiresIn = Number(token.expires_in || token.expiresIn || 3600);
+  const explicitExpiry = Number(token.expires_at || token.expiresAt || token.expiry_date || 0);
+  return {
+    accessToken,
+    expiresAt: explicitExpiry > Date.now() ? explicitExpiry : Date.now() + Math.max(60, expiresIn) * 1000
+  };
+}
+
+function hasUsableToken(expiresAt) {
+  return Number(expiresAt || 0) > Date.now() + TOKEN_REFRESH_MARGIN_MS;
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
   });
 }
 

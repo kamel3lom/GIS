@@ -10,11 +10,11 @@ export function renderAuthPanel(geeStatus = 'disconnected') {
       </div>
       <label class="field">
         <span>Google Cloud / Earth Engine Project ID</span>
-        <input id="gee-project-id" type="text" placeholder="مثال: my-earthengine-project" autocomplete="off" />
+        <input id="gee-project-id" type="text" dir="ltr" spellcheck="false" placeholder="مثال: my-earthengine-project" autocomplete="off" />
       </label>
       <label class="field">
         <span>OAuth Client ID</span>
-        <input id="gee-client-id" type="text" placeholder="OAuth Web Client ID من Google Cloud" autocomplete="off" />
+        <input id="gee-client-id" type="text" dir="ltr" spellcheck="false" placeholder="OAuth Web Client ID من Google Cloud" autocomplete="off" />
       </label>
       <div class="tool-grid two">
         <button id="gee-connect" type="button">ربط Google Earth Engine</button>

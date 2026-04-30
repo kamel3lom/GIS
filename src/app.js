@@ -90,6 +90,7 @@ export class GeoIndexApp {
     await this.loadLocalSettings();
     await this.geeClient.restoreSession();
     this.renderShell();
+    this.geeClient.preloadAuthLibraries();
     this.mapView = new MapView({
       elementId: 'map',
       onDrawingChange: (geojson) => {
@@ -747,8 +748,7 @@ export class GeoIndexApp {
       this.populateAuthInputs();
       await this.runAnalysisForCurrentSelection({ auto: true });
     } catch (error) {
-      this.state.geeStatus = 'failed';
-      this.updateGeeStatus(error.message);
+      this.geeClient.setStatus('failed', error.message);
       this.showError(error);
     }
   }
