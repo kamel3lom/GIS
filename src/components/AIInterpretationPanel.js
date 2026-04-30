@@ -4,7 +4,7 @@ export function renderAIInterpretationPanel(interpretation = '') {
       <div class="ai-panel-header">
         <div>
           <h2>تفسير النتيجة بالذكاء الاصطناعي</h2>
-          <p>التفسير يستخدم القيم المحسوبة فقط. عند عدم إدخال مفتاح API يعمل محرك داخلي مجاني.</p>
+          <p>التفسير الداخلي يقرأ اسم المؤشر والقيم المحسوبة والفئات الظاهرة، ولا يستبدل التحليل بمؤشر آخر.</p>
         </div>
         <div class="ai-actions">
           <button id="interpret-result" type="button">تفسير النتيجة بالذكاء الاصطناعي</button>

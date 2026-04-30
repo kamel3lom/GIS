@@ -80,6 +80,7 @@ export class GeoIndexApp {
       resultOpacity: 0.72
     };
     this.chart = null;
+    this.analysisCache = new Map();
     this.geeClient = new GeeClient(({ status, message }) => {
       this.state.geeStatus = status;
       this.updateGeeStatus(message);
@@ -93,6 +94,7 @@ export class GeoIndexApp {
     this.geeClient.preloadAuthLibraries();
     this.mapView = new MapView({
       elementId: 'map',
+      legendElementId: 'map-legend-panel',
       onDrawingChange: (geojson) => {
         this.state.drawnGeoJSON = ensureFeatureCollection(geojson);
         this.setProgress('تم تحديث الرسومات.');
@@ -144,14 +146,19 @@ export class GeoIndexApp {
         </aside>
         <section class="map-stage" id="map-stage">
           <div class="map-title-card">
-            <span>GeoIndex Studio</span>
-            <strong id="map-title">خريطة تحليل جغرافي</strong>
-            <small id="map-subtitle">kamel3lom · Open GIS Learning</small>
+            <div>
+              <span>GeoIndex Studio</span>
+              <strong id="map-title">خريطة تحليل جغرافي</strong>
+              <small id="map-subtitle">kamel3lom · Open GIS Learning</small>
+            </div>
           </div>
           <div id="map" class="map"></div>
-          <div class="analysis-progress">
-            <span id="analysis-state">جاهز</span>
-            <input id="result-opacity" type="range" min="0.2" max="1" step="0.05" value="${this.state.resultOpacity}" aria-label="شفافية النتيجة" />
+          <div class="map-footer-bar">
+            <div id="map-legend-panel" class="map-legend map-legend-panel"></div>
+            <div class="analysis-progress">
+              <span id="analysis-state">جاهز</span>
+              <input id="result-opacity" type="range" min="0.2" max="1" step="0.05" value="${this.state.resultOpacity}" aria-label="شفافية النتيجة" />
+            </div>
           </div>
           ${renderAIInterpretationPanel(this.state.interpretation)}
         </section>
@@ -495,7 +502,16 @@ export class GeoIndexApp {
       let result;
       if (this.state.geeStatus === 'connected' && analysis.geeSupported) {
         try {
-          result = await this.runGeeAnalysis(analysis, dateRange, resolution);
+          const cacheKey = this.buildAnalysisCacheKey(analysis.id, dateRange, resolution);
+          const cached = this.analysisCache.get(cacheKey);
+          if (cached) {
+            result = cached;
+            this.renderResultOnMap(result, analysis);
+            this.setProgress(`تم عرض ${analysis.name_ar} من ذاكرة الصفحة بدلا من إعادة الحساب.`);
+          } else {
+            result = await this.runGeeAnalysis(analysis, dateRange, resolution);
+            this.rememberAnalysisResult(cacheKey, result);
+          }
         } catch (error) {
           if (!analysis.browserSupported || !this.hasBrowserInputsFor(analysis)) throw error;
           this.setProgress(`تعذر مسار GEE، سيتم استخدام البيانات المحلية المتاحة. ${error.message}`);
@@ -572,6 +588,11 @@ export class GeoIndexApp {
     result.id = analysis.id;
     result.name = result.name || analysis.name_ar;
     result.interpretationTemplateId = result.interpretationTemplateId || analysis.interpretationTemplateId;
+    this.renderResultOnMap(result, analysis);
+    return result;
+  }
+
+  renderResultOnMap(result, analysis = {}) {
     if (result.tileUrl) {
       this.mapView.addGeeTileLayer(result.tileUrl, {
         opacity: this.state.resultOpacity,
@@ -581,7 +602,31 @@ export class GeoIndexApp {
     }
     if (result.rasterOverlay) this.mapView.addRasterOverlay(result.rasterOverlay, this.state.resultOpacity);
     if (result.geojson?.features?.length) this.mapView.addResultGeoJSON(result.geojson, result.name);
-    return result;
+  }
+
+  buildAnalysisCacheKey(analysisId, dateRange, resolution) {
+    let bounds = null;
+    try {
+      bounds = this.state.studyArea ? turf.bbox(this.state.studyArea).map((value) => Number(value).toFixed(5)) : null;
+    } catch {
+      bounds = null;
+    }
+    return JSON.stringify({
+      analysisId,
+      dateRange,
+      resolution,
+      areaName: this.state.areaName,
+      bounds
+    });
+  }
+
+  rememberAnalysisResult(cacheKey, result) {
+    if (!cacheKey || !result) return;
+    this.analysisCache.set(cacheKey, result);
+    while (this.analysisCache.size > 12) {
+      const oldestKey = this.analysisCache.keys().next().value;
+      this.analysisCache.delete(oldestKey);
+    }
   }
 
   applyAnalysisResult(result) {
@@ -803,7 +848,7 @@ export class GeoIndexApp {
   async exportPoster(orientation) {
     try {
       await exportPoster({
-        mapElement: document.getElementById('map-stage'),
+        mapElement: document.getElementById('map'),
         result: this.state.currentResult,
         interpretation: this.state.interpretation,
         templateId: document.getElementById('poster-template')?.value || 'luxury_dark',

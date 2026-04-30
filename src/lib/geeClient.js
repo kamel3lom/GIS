@@ -415,10 +415,11 @@ export class GeeClient {
     const region = geometryToEe(ee, studyArea);
     const dates = normalizeDates(dateRange);
     const image = recipe.build({ ee, region, start: dates.start, end: dates.end, year: dates.year });
-    const mapId = image.getMap(recipe.vis || {});
-    const stats = recipe.categorical
-      ? await evaluateCategoricalStats(ee, image, region, recipe)
-      : await evaluateNumericStats(ee, image, region, recipe);
+    const mapPromise = getImageMap(image, recipe.vis || {});
+    const statsPromise = recipe.categorical
+      ? evaluateCategoricalStats(ee, image, region, recipe)
+      : evaluateNumericStats(ee, image, region, recipe);
+    const [mapId, stats] = await Promise.all([mapPromise, statsPromise]);
     return {
       id: analysisId,
       analysisId,
@@ -503,6 +504,7 @@ function geometryToEe(ee, geojson) {
 }
 
 async function evaluateNumericStats(ee, image, region, recipe) {
+  const scale = recipe.statsScale || Math.max(recipe.scale || 1000, (recipe.scale || 1000) <= 30 ? 60 : recipe.scale || 1000);
   const reducer = ee
     .Reducer.min()
     .combine(ee.Reducer.max(), '', true)
@@ -512,7 +514,7 @@ async function evaluateNumericStats(ee, image, region, recipe) {
   const dictionary = image.reduceRegion({
     reducer,
     geometry: region,
-    scale: recipe.scale || 1000,
+    scale,
     bestEffort: true,
     maxPixels: 1e13,
     tileScale: 4
@@ -529,10 +531,11 @@ async function evaluateNumericStats(ee, image, region, recipe) {
 }
 
 async function evaluateCategoricalStats(ee, image, region, recipe) {
+  const scale = recipe.statsScale || Math.max(recipe.scale || 30, 30);
   const dictionary = image.reduceRegion({
     reducer: ee.Reducer.frequencyHistogram(),
     geometry: region,
-    scale: recipe.scale || 30,
+    scale,
     bestEffort: true,
     maxPixels: 1e13,
     tileScale: 4
@@ -568,6 +571,23 @@ function readStat(values, suffix) {
   const entry = Object.entries(values || {}).find(([key]) => key.endsWith(`_${suffix}`) || key === suffix);
   const value = Number(entry?.[1]);
   return Number.isFinite(value) ? value : null;
+}
+
+function getImageMap(image, vis) {
+  return new Promise((resolve, reject) => {
+    try {
+      const immediate = image.getMap(vis, (value, error) => {
+        if (error) {
+          reject(normalizeEeError(error));
+          return;
+        }
+        resolve(value);
+      });
+      if (immediate) resolve(immediate);
+    } catch (error) {
+      reject(normalizeEeError(error));
+    }
+  });
 }
 
 function mapIdToTileUrl(mapId) {

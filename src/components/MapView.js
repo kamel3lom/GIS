@@ -4,8 +4,9 @@ import { getTileLayerOptions, sourceById } from '../lib/sourcesRegistry';
 import { colorRamps } from '../lib/rasterAnalysis';
 
 export class MapView {
-  constructor({ elementId, onDrawingChange, onStudyAreaChange, onStatus }) {
+  constructor({ elementId, legendElementId, onDrawingChange, onStudyAreaChange, onStatus }) {
     this.elementId = elementId;
+    this.legendElementId = legendElementId;
     this.onDrawingChange = onDrawingChange || (() => {});
     this.onStudyAreaChange = onStudyAreaChange || (() => {});
     this.onStatus = onStatus || (() => {});
@@ -296,24 +297,17 @@ export class MapView {
   }
 
   updateLegend(rampName) {
+    const externalLegend = this.legendElementId ? document.getElementById(this.legendElementId) : null;
+    if (externalLegend) {
+      externalLegend.innerHTML = buildLegendHtml(rampName);
+      return;
+    }
+
     if (this.legendControl) this.map.removeControl(this.legendControl);
     this.legendControl = L.control({ position: 'bottomleft' });
     this.legendControl.onAdd = () => {
       const div = L.DomUtil.create('div', 'map-legend');
-      if (!rampName || !colorRamps[rampName]) {
-        div.innerHTML = '<strong>مفتاح الخريطة</strong><span>اختر مدينة ومؤشرا ثم شغّل التحليل لعرض المفتاح.</span>';
-        return div;
-      }
-      const ramp = colorRamps[rampName];
-      const gradient = ramp.map(([, color], index) => `${color} ${(index / (ramp.length - 1)) * 100}%`).join(', ');
-      div.innerHTML = `
-        <strong>مفتاح الخريطة</strong>
-        <i style="background: linear-gradient(90deg, ${gradient})"></i>
-        <div class="legend-values">
-          <span>${ramp[0][0]}</span>
-          <span>${ramp[ramp.length - 1][0]}</span>
-        </div>
-      `;
+      div.innerHTML = buildLegendHtml(rampName);
       return div;
     };
     this.legendControl.addTo(this.map);
@@ -326,4 +320,20 @@ export class MapView {
   invalidateSize() {
     window.setTimeout(() => this.map?.invalidateSize(), 80);
   }
+}
+
+function buildLegendHtml(rampName) {
+  if (!rampName || !colorRamps[rampName]) {
+    return '<strong>مفتاح الخريطة</strong><span>اختر مدينة ومؤشرا ثم شغّل التحليل لعرض المفتاح.</span>';
+  }
+  const ramp = colorRamps[rampName];
+  const gradient = ramp.map(([, color], index) => `${color} ${(index / (ramp.length - 1)) * 100}%`).join(', ');
+  return `
+    <strong>مفتاح الخريطة</strong>
+    <i style="background: linear-gradient(90deg, ${gradient})"></i>
+    <div class="legend-values">
+      <span>${ramp[0][0]}</span>
+      <span>${ramp[ramp.length - 1][0]}</span>
+    </div>
+  `;
 }

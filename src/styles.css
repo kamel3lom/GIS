@@ -404,27 +404,21 @@ h3 {
   border-radius: 16px;
   overflow: hidden;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto;
 }
 
 .map {
   min-height: 0;
   width: 100%;
+  height: 100%;
   z-index: 1;
 }
 
 .map-title-card {
-  position: absolute;
-  z-index: 700;
-  top: 18px;
-  right: 18px;
-  max-width: min(420px, calc(100% - 36px));
-  border: 1px solid rgba(216, 180, 93, 0.35);
-  border-radius: 10px;
-  background: rgba(5, 9, 16, 0.74);
-  backdrop-filter: blur(16px);
-  padding: 12px 14px;
-  pointer-events: none;
+  z-index: 3;
+  border-bottom: 1px solid rgba(216, 180, 93, 0.28);
+  background: rgba(5, 9, 16, 0.9);
+  padding: 10px 16px;
 }
 
 .map-title-card span {
@@ -435,7 +429,7 @@ h3 {
 .map-title-card strong {
   display: block;
   margin: 2px 0;
-  font-size: 1.2rem;
+  font-size: 1rem;
   color: #ffffff;
 }
 
@@ -443,12 +437,18 @@ h3 {
   color: var(--muted);
 }
 
+.map-footer-bar {
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  background: rgba(5, 9, 16, 0.9);
+  padding: 10px 14px;
+}
+
 .analysis-progress {
-  position: absolute;
-  z-index: 710;
-  left: 18px;
-  right: 18px;
-  bottom: 236px;
   min-height: 46px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 160px;
@@ -456,10 +456,10 @@ h3 {
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(5, 9, 16, 0.74);
-  backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.045);
   padding: 8px 12px;
   color: #dbefff;
+  min-width: 0;
 }
 
 .analysis-progress input {
@@ -541,6 +541,13 @@ h3 {
   min-width: 190px;
   display: grid;
   gap: 7px;
+}
+
+.map-legend-panel {
+  min-width: 0;
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: none;
 }
 
 .map-legend strong {
@@ -832,7 +839,7 @@ th {
   }
 
   .analysis-progress {
-    bottom: 256px;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -890,13 +897,8 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .map-footer-bar,
   .analysis-progress {
     grid-template-columns: 1fr;
-    bottom: 284px;
-  }
-
-  .map-title-card {
-    left: 12px;
-    right: 12px;
   }
 }

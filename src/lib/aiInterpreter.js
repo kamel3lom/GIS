@@ -2,13 +2,90 @@ import interpretationLibrary from '../data/interpretation-library.json';
 import { formatArea } from './geospatial';
 import { formatNumber } from './rasterAnalysis';
 
+const indicatorAliases = {
+  vegetation_health: 'ndvi',
+  water_detection: 'mndwi',
+  water_occurrence: 'mndwi',
+  built_up: 'ndbi',
+  thermal_gradient: 'lst',
+  air_quality: 'pollution',
+  co: 'pollution',
+  so2: 'pollution',
+  ch4: 'pollution',
+  o3: 'pollution',
+  pm25: 'pollution',
+  aod: 'pollution',
+  viirs_lights: 'pollution',
+  slope: 'dem',
+  hillshade: 'dem'
+};
+
+const extraIndicators = {
+  water_detection: {
+    title_ar: 'كشف المسطحات المائية',
+    definition: 'تصنيف مائي مبني غالبا على NDWI أو MNDWI لإظهار المياه أو الرطوبة السطحية المحتملة.',
+    highValues: 'مياها أو رطوبة سطحية أعلى ضمن حدود المؤشر المستخدم',
+    lowValues: 'أسطحا جافة أو عمرانية أو غير مائية غالبا',
+    classes: [
+      { label: 'غير مائي غالبا', min: -1, max: 0, meaning: 'أسطح غير مائية أو جافة.' },
+      { label: 'انتقالي', min: 0, max: 0.2, meaning: 'مياه محتملة أو اختلاط طيفي.' },
+      { label: 'مائي غالبا', min: 0.2, max: 1, meaning: 'مياه أو رطوبة مرتفعة نسبيا.' }
+    ],
+    accuracyLimits: 'تتأثر القراءة بالظلال والعكارة ودقة المصدر والعتبة المحلية.'
+  },
+  built_up: {
+    title_ar: 'مؤشر المناطق المبنية',
+    definition: 'قراءة طيفية للأسطح المبنية أو المكشوفة اعتمادا على علاقة SWIR وNIR غالبا.',
+    highValues: 'عمرانا أو تربة جافة أو أسطحا مكشوفة عالية الانعكاس',
+    lowValues: 'نباتا أو مياها أو أسطحا أقل ارتباطا بالعمران',
+    classes: [
+      { label: 'غير عمراني غالبا', min: -1, max: 0, meaning: 'نبات أو مياه أو أسطح غير مبنية.' },
+      { label: 'عمراني/مكشوف محتمل', min: 0, max: 0.2, meaning: 'اختلاط بين عمران وتربة.' },
+      { label: 'عمراني أو جاف واضح', min: 0.2, max: 1, meaning: 'أسطح مبنية أو مكشوفة قوية.' }
+    ],
+    accuracyLimits: 'قد يخلط المؤشر بين العمران والتربة الجافة لذلك يحتاج تحقق بصري أو طبقة مرجعية.'
+  },
+  precipitation: {
+    title_ar: 'الأمطار السنوية',
+    definition: 'مجموع الهطول خلال الفترة المختارة من منتج مطري شبكي.',
+    highValues: 'هطولا أكبر نسبيا خلال الفترة المختارة',
+    lowValues: 'جفافا أو هطولا أقل نسبيا',
+    classes: [],
+    accuracyLimits: 'الدقة مكانية وزمانية شبكية ولا تمثل قياس محطة مطرية واحدة بدقة كاملة.'
+  },
+  landcover: {
+    title_ar: 'تصنيف الغطاء الأرضي',
+    definition: 'خريطة فئات أرضية جاهزة مثل العمران والمياه والزراعة والأراضي العارية.',
+    highValues: 'كود الفئة الأعلى في المنتج وليس قيمة كمية متدرجة',
+    lowValues: 'كود الفئة الأدنى في المنتج وليس قيمة جودة أو انخفاض',
+    classes: [],
+    accuracyLimits: 'التصنيف عالمي وقد يخطئ محليا، خاصة عند الحواف والمناطق المختلطة.'
+  },
+  viirs_lights: {
+    title_ar: 'مؤشرات التلوث الضوئي VIIRS',
+    definition: 'قراءة شدة الإضاءة الليلية كبديل تقريبي للنشاط الحضري أو الضوئي.',
+    highValues: 'إضاءة ليلية أو نشاطا حضريا/صناعيا أعلى نسبيا',
+    lowValues: 'إضاءة أقل أو مناطق غير مضاءة نسبيا',
+    classes: [],
+    accuracyLimits: 'تتأثر القيم بالإضاءة المؤقتة والسحب والمعالجة الشهرية ولا تمثل قياسا أرضيا مباشرا.'
+  }
+};
+
 function indicatorInfo(analysisId, result = {}) {
   const templateId = result.interpretationTemplateId || result.templateId;
   const pollutionIds = new Set(['air_quality', 'no2', 'co2', 'aod', 'pm25']);
+  const candidates = [
+    analysisId,
+    templateId,
+    indicatorAliases[templateId],
+    indicatorAliases[analysisId],
+    pollutionIds.has(analysisId) ? 'pollution' : null
+  ].filter(Boolean);
+  for (const key of candidates) {
+    const info = interpretationLibrary.indicators[key] || extraIndicators[key];
+    if (info) return info;
+  }
   return (
-    interpretationLibrary.indicators[templateId] ||
-    interpretationLibrary.indicators[analysisId] ||
-    (pollutionIds.has(analysisId) ? interpretationLibrary.indicators.pollution : null) ||
     interpretationLibrary.indicators.vector_summary ||
     interpretationLibrary.indicators.pollution
   );
@@ -71,13 +148,6 @@ export function ruleBasedInterpretation(result, context = {}) {
   const unit = result.unit || stats.unit || '';
   const rangeText = unit ? `${min} ${unit} و${max} ${unit}` : `${min} و${max}`;
   const meanText = unit ? `${mean} ${unit}` : mean;
-  const classText = dominant
-    ? `وتظهر الفئة "${dominant.label}" بوصفها الفئة الأكبر ضمن التوزيع بنسبة ${
-        dominant.percentage == null ? 'غير متاح بسبب نقص البيانات' : `${dominant.percentage.toFixed(2)}%`
-      }${
-        dominant.areaM2 == null ? '' : `، وبمساحة تقديرية ${formatArea(dominant.areaM2)}`
-      }.`
-    : 'ولا تتوفر فئات كافية لحساب الفئة الأكبر، لذلك تبقى نسب الفئات غير متاحة بسبب نقص البيانات.';
 
   const sourceText = result.source ? `اعتمدت النتيجة على مصدر: ${result.source}.` : 'مصدر البيانات غير محدد.';
   const reliability = info.accuracyLimits
@@ -97,13 +167,13 @@ export function ruleBasedInterpretation(result, context = {}) {
 
   return [
     `يتضح من الخريطة الناتجة أن ${info.title_ar || result.name} في ${areaName} يتراوح بين ${rangeText}، بمتوسط قدره ${meanText}.`,
-    `كما أن الوسيط يساوي ${median} والانحراف المعياري يساوي ${stdDev} عند توفر قيم صالحة للحساب.`,
-    `تشير القيم الأعلى إلى ${info.highValues} بينما تعكس القيم الأدنى ${info.lowValues}`,
-    classText,
-    `من الناحية الجغرافية، يفسر هذا النص المؤشر المختار نفسه (${info.title_ar || result.name}) اعتمادا على القيم الظاهرة في الخريطة والنتائج فقط. ${sourceText}`,
-    reliability,
-    'هذه النتيجة تحليلية أولية وليست بديلا عن المسح الميداني أو البيانات الرسمية، ويجب مراجعة تاريخ الالتقاط ودقة المصدر وحالة السحب أو جودة الحزم قبل استخدامها في قرارات حساسة.'
-  ].join(' ');
+    `القراءة الرقمية: الوسيط ${median}، والانحراف المعياري ${stdDev}، والوحدة ${unit || 'غير محددة في المصدر'}. ${sourceText}`,
+    `معنى الألوان والقيم: المناطق ذات القيم الأعلى تمثل ${info.highValues}، بينما تمثل القيم الأدنى ${info.lowValues}.`,
+    distributionText(stats, info, dominant),
+    numericPositionText(stats, info),
+    `حدود الموثوقية: ${reliability}`,
+    'الخلاصة: هذا تفسير داخلي مبني على أرقام النتيجة الحالية فقط، وليس نصا محفوظا لمؤشر آخر. تبقى النتيجة أولية ويجب مراجعة تاريخ البيانات ودقة المصدر والتحقق الميداني عند استخدامها في قرارات مهمة.'
+  ].join('\n\n');
 }
 
 export async function callAIProvider(settings, result, context = {}) {
@@ -123,7 +193,11 @@ export async function callAIProvider(settings, result, context = {}) {
   } else {
     rawText = ruleBasedInterpretation(result, context);
   }
-  return formatAcademicArabic(validateNoFakeNumbers(rawText, result, context));
+  const cleaned = formatAcademicArabic(validateNoFakeNumbers(rawText, result, context));
+  if (hasWrongIndicatorFocus(cleaned, result)) {
+    return ruleBasedInterpretation(result, context);
+  }
+  return cleaned;
 }
 
 async function callGemini(settings, prompt) {
@@ -265,6 +339,61 @@ function collectNumbers(value, set) {
 function normalizeNumber(value) {
   if (!Number.isFinite(value)) return '';
   return Number(value).toFixed(Math.abs(value) < 10 ? 3 : 2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function distributionText(stats, info, dominant) {
+  const classes = stats?.classes || [];
+  if (classes.length) {
+    const topClasses = [...classes]
+      .sort((a, b) => (b.percentage || 0) - (a.percentage || 0) || (b.areaM2 || 0) - (a.areaM2 || 0))
+      .slice(0, 3)
+      .map((item) => {
+        const percentage = item.percentage == null ? 'نسبة غير متاحة' : `${item.percentage.toFixed(2)}%`;
+        const area = item.areaM2 == null ? '' : `، بمساحة ${formatArea(item.areaM2)}`;
+        return `${item.label}: ${percentage}${area}`;
+      })
+      .join('؛ ');
+    const dominantText = dominant ? `الفئة الأكبر هي "${dominant.label}".` : '';
+    return `توزيع الفئات: ${topClasses}. ${dominantText}`;
+  }
+
+  const meanClass = classForValue(stats?.mean, info);
+  if (meanClass) {
+    return `توزيع الفئات التفصيلي غير متاح في هذه النتيجة، لكن المتوسط يقع ضمن فئة "${meanClass.label}"، ودلالتها: ${meanClass.meaning}`;
+  }
+  return 'توزيع الفئات التفصيلي غير متاح في هذه النتيجة، لذلك يعتمد التفسير على الحد الأدنى والأعلى والمتوسط والوسيط فقط.';
+}
+
+function numericPositionText(stats, info) {
+  const mean = Number(stats?.mean);
+  const min = Number(stats?.min);
+  const max = Number(stats?.max);
+  if (!Number.isFinite(mean) || !Number.isFinite(min) || !Number.isFinite(max) || max === min) {
+    return `تعريف المؤشر المستخدم: ${info.definition}`;
+  }
+  const position = (mean - min) / (max - min);
+  const level = position >= 0.67 ? 'قريب من الطرف الأعلى للنطاق' : position <= 0.33 ? 'قريب من الطرف الأدنى للنطاق' : 'في منتصف النطاق تقريبا';
+  return `موضع المتوسط داخل نطاق الخريطة ${level}، وهذا يساعد على قراءة الصورة العامة دون افتراض مواقع أو أرقام غير محسوبة. تعريف المؤشر: ${info.definition}`;
+}
+
+function classForValue(value, info) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return (info.classes || []).find((item) => numeric >= item.min && numeric < item.max) || null;
+}
+
+function hasWrongIndicatorFocus(text, result) {
+  const id = result?.id || '';
+  const name = `${result?.name || ''} ${indicatorInfo(id, result).title_ar || ''}`;
+  const context = `${id} ${name}`.toLowerCase();
+  const content = String(text || '');
+  const ownsVegetation = /(ndvi|evi|savi|gndvi|ndmi|vegetation|نبات|غطاء نباتي)/i.test(context);
+  const ownsWater = /(ndwi|mndwi|water|مياه|مائي)/i.test(context);
+  const ownsThermal = /(lst|thermal|حرار|temperature)/i.test(context);
+  if (!ownsVegetation && /\bNDVI\b|مؤشر الغطاء النباتي/i.test(content)) return true;
+  if (!ownsWater && /\bM?NDWI\b|مؤشر المياه|المسطحات المائية/i.test(content)) return true;
+  if (!ownsThermal && /\bLST\b|درجة حرارة سطح الأرض|الجزيرة الحرارية/i.test(content)) return true;
+  return false;
 }
 
 export function formatAcademicArabic(text) {
